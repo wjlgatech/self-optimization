@@ -2,32 +2,36 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.egg-info/
-dist/
-build/
-*.egg
-
-# Virtual environments
-.venv/
+*.so
+.Python
+env/
 venv/
+.venv/
 ENV/
-
-# Testing / coverage
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
 
-# OS
+# Logs
+*.log
+logs/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# System
 .DS_Store
 Thumbs.db
 
-# Project artifacts
-verification_history.json
+# Project specific
+*.sqlite
+.env
+.env.local
+
+# State persistence (runtime data, not code)
+state/

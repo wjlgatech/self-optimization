@@ -74,16 +74,54 @@ class RecursiveSelfImprovementProtocol:
 
     def _identify_capability_gaps(self) -> Dict[str, Any]:
         """
-        Identify gaps in current capabilities
+        Identify gaps in current capabilities.
+
+        Rule-based: checks capability_map for low proficiency (<0.5)
+        and stale entries (>30 days). Also checks for expected capabilities
+        that are missing entirely.
 
         :return: Dictionary of capability gaps
         """
-        # Placeholder for gap analysis
-        # Can be expanded with more sophisticated gap detection
+        expected_capabilities = [
+            "task_execution",
+            "learning",
+            "communication",
+            "problem_solving",
+            "self_monitoring",
+        ]
+
+        low_performance: List[str] = []
+        missing: List[str] = []
+        potential_improvements: List[str] = []
+
+        now = datetime.now()
+
+        # Check for low-proficiency and stale capabilities
+        for cap_name, cap_data in self.capability_map.items():
+            proficiency = cap_data.get("proficiency", 0.0)
+            if isinstance(proficiency, (int, float)) and proficiency < 0.5:
+                low_performance.append(cap_name)
+
+            # Check staleness
+            added_ts = cap_data.get("added_timestamp", "")
+            if added_ts:
+                try:
+                    added_dt = datetime.fromisoformat(added_ts)
+                    days_old = (now - added_dt).days
+                    if days_old > 30:
+                        potential_improvements.append(f"{cap_name} (stale: {days_old} days)")
+                except ValueError:
+                    pass
+
+        # Check for expected capabilities that are missing
+        for expected in expected_capabilities:
+            if expected not in self.capability_map:
+                missing.append(expected)
+
         return {
-            "low_performance_areas": [],
-            "missing_capabilities": [],
-            "potential_improvements": [],
+            "low_performance_areas": low_performance,
+            "missing_capabilities": missing,
+            "potential_improvements": potential_improvements,
         }
 
     def _filter_proposals(self, proposals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -136,13 +174,51 @@ class RecursiveSelfImprovementProtocol:
 
     def _implement_improvement(self, proposal: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Implement a specific improvement proposal
+        Implement a specific improvement proposal.
+
+        If proposal has a 'target' capability: updates or creates it in capability_map.
+        Existing capabilities get +0.1 proficiency (capped at 1.0).
+        New capabilities start at 0.1 proficiency.
 
         :param proposal: Improvement proposal to implement
-        :return: Result of the improvement implementation
+        :return: Detailed change record
         """
-        # Placeholder for improvement implementation
-        return {"status": "implemented", "timestamp": datetime.now().isoformat()}
+        target = proposal.get("target", "")
+        result: Dict[str, Any] = {
+            "status": "implemented",
+            "timestamp": datetime.now().isoformat(),
+            "changes": [],
+        }
+
+        if target:
+            if target in self.capability_map:
+                old_prof = self.capability_map[target].get("proficiency", 0.0)
+                new_prof = min(1.0, old_prof + 0.1)
+                self.capability_map[target]["proficiency"] = new_prof
+                self.capability_map[target]["last_improved"] = datetime.now().isoformat()
+                result["changes"].append(
+                    {
+                        "action": "improved",
+                        "capability": target,
+                        "old_proficiency": old_prof,
+                        "new_proficiency": new_prof,
+                    }
+                )
+            else:
+                self.capability_map[target] = {
+                    "added_timestamp": datetime.now().isoformat(),
+                    "proficiency": 0.1,
+                    "source": proposal.get("type", "improvement"),
+                }
+                result["changes"].append(
+                    {
+                        "action": "created",
+                        "capability": target,
+                        "proficiency": 0.1,
+                    }
+                )
+
+        return result
 
     def _log_improvement(self, improvement_type: str, details: Dict[str, Any]) -> None:
         """
@@ -190,10 +266,37 @@ class RecursiveSelfImprovementProtocol:
 
     def _analyze_capability_growth(self, improvements: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Analyze capability growth from recent improvements
+        Analyze capability growth from recent improvements.
+
+        Counts actual capability_update and proposal_execution entries.
+        Calculates growth rate as total changes / number of improvements.
 
         :param improvements: List of recent improvement logs
-        :return: Capability growth analysis
+        :return: Capability growth analysis with real counts
         """
-        # Placeholder for capability growth analysis
-        return {"new_capabilities": 0, "improved_capabilities": 0, "growth_rate": 0.0}
+        new_capabilities = 0
+        improved_capabilities = 0
+
+        for entry in improvements:
+            imp_type = entry.get("type", "")
+            if imp_type == "capability_update":
+                details = entry.get("details", {})
+                new_capabilities += len(details) if isinstance(details, dict) else 1
+            elif imp_type == "proposal_execution":
+                details = entry.get("details", {})
+                result = details.get("result", {})
+                changes = result.get("changes", [])
+                for change in changes:
+                    if change.get("action") == "created":
+                        new_capabilities += 1
+                    elif change.get("action") == "improved":
+                        improved_capabilities += 1
+
+        total_changes = new_capabilities + improved_capabilities
+        growth_rate = total_changes / len(improvements) if improvements else 0.0
+
+        return {
+            "new_capabilities": new_capabilities,
+            "improved_capabilities": improved_capabilities,
+            "growth_rate": growth_rate,
+        }

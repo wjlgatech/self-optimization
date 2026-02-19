@@ -2,25 +2,92 @@
 
 ## Architecture
 
-Two independent Python modules with no external dependencies (stdlib only):
+Six Python modules (stdlib only, except optional `urllib` for LLM):
 
 ```
 src/
-├── anti_idling_system.py      # Idle state detection & intervention
-├── results_verification.py    # Result quality verification (SMARC criteria)
+├── anti_idling_system.py          # Idle state detection & intervention
+├── results_verification.py        # Result quality verification (SMARC criteria)
+├── multi_agent_performance.py     # Multi-agent performance tracking
+├── recursive_self_improvement.py  # Self-improvement protocol
+├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
+├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
+├── orchestrator.py                # Integration layer: wires all systems
+├── __main__.py                    # CLI entry point
 └── __init__.py
 tests/
 ├── test_anti_idling_unit.py          # Unit tests
 ├── test_results_verification_unit.py # Unit tests
+├── test_multi_agent_performance.py   # Performance optimizer tests
+├── test_recursive_self_improvement.py # Self-improvement tests
+├── test_filesystem_scanner.py        # Scanner tests (real filesystem)
+├── test_llm_provider.py             # LLM provider tests
+├── test_orchestrator.py             # Orchestrator tests (real filesystem)
 ├── test_integration.py               # Integration tests
 ├── test_functional.py                # Functional/scenario tests
 ├── test_edge_cases.py                # Edge case & robustness tests
 ├── test_contract_and_regression.py   # Contract + regression tests
 ├── conftest.py                       # Centralized sys.path setup
 └── __init__.py
+state/                                # Runtime state (gitignored)
 ```
 
-The two modules are **independent** — no imports between them. Integration happens at the application layer.
+## Orchestrator Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                  Orchestrator                     │
+│  (wires 4 systems, scheduling, state persistence)│
+├─────────────┬───────────────┬───────────────────┤
+│ AntiIdling  │ Performance   │ SelfImprovement   │
+│ + Filesystem│ + Real Trends │ + Real Execution  │
+│   Scanner   │   from Data   │ + LLM Proposals   │
+├─────────────┴───────────────┴───────────────────┤
+│              LLM Provider (optional)             │
+│  urllib → Anthropic API (ANTHROPIC_API_KEY)      │
+│  Falls back to rule-based if no key              │
+└─────────────────────────────────────────────────┘
+```
+
+Hybrid approach: rules handle scheduling, metrics, state, thresholds.
+LLM (optional) enhances analysis and reflection writing.
+
+## CLI Commands
+
+```bash
+# Idle check (every 2 hours via cron)
+python src/__main__.py idle-check
+
+# Daily review (once daily at 11 PM via cron)
+python src/__main__.py daily-review
+
+# Long-running daemon
+python src/__main__.py run-daemon --interval 7200 --review-hour 23
+
+# System status
+python src/__main__.py status
+```
+
+## Cron Setup
+
+Jobs are configured in `~/.openclaw/cron/jobs.json`:
+- `self-opt-idle-check`: every 2 hours
+- `self-opt-daily-review`: daily at 11 PM
+
+## State Persistence
+
+Runtime state is stored in `state/` (gitignored):
+- `activity_log.json` — recent activity entries
+- `performance_history.json` — performance tracking data
+- `improvement_history.json` — improvement execution log
+- `capability_map.json` — current capability proficiencies
+- `last_run.json` — last operation timestamp and result
+
+## LLM Integration
+
+Set `ANTHROPIC_API_KEY` env var to enable LLM-enhanced analysis.
+Uses `claude-haiku-4-5-20251001` via stdlib `urllib.request`.
+Falls back to rule-based analysis if no key is set.
 
 ## Contributor Workflow
 
@@ -56,7 +123,7 @@ make test
 pytest tests/ -v
 ```
 
-182 tests, all passing. Pytest config lives in `pyproject.toml`.
+200+ tests, all passing. Pytest config lives in `pyproject.toml`.
 
 ## Quality Gates
 
@@ -64,7 +131,7 @@ All three must pass before merging:
 
 1. **Ruff** — linting and import sorting (`ruff check`)
 2. **Mypy** — type checking on `src/` (`mypy src/`)
-3. **Pytest** — 182+ tests (`pytest tests/ -v`)
+3. **Pytest** — 200+ tests (`pytest tests/ -v`)
 
 Run all at once with `make check`.
 
@@ -90,8 +157,12 @@ Run all at once with `make check`.
 - `_check_actionability` checks `'next_step' in results or 'recommendation' in results`
 - `run_periodic_check` uses `self._running` flag; call `stop()` to exit gracefully
 - Idle detection uses strict `>` comparison (equal-to-threshold does NOT trigger)
-- `generate_emergency_actions()` returns hardcoded strings — not adaptive
-- `logging.basicConfig()` is called in both constructors (first-call-wins behavior)
+- `generate_emergency_actions()` is context-aware when activity_log has data; returns full pool when empty (backward compatible)
+- `_calculate_performance_score()` uses weighted scoring (accuracy=0.4, efficiency=0.35, adaptability=0.25)
+- `_analyze_performance_trends()` uses first-half vs second-half comparison, >5% = improving, <-5% = declining
+- `_identify_capability_gaps()` checks for low proficiency (<0.5), stale entries (>30 days), and missing expected capabilities
+- `_implement_improvement()` updates capability_map: existing +0.1 proficiency (capped 1.0), new starts at 0.1
+- `logging.basicConfig()` is called in constructors (first-call-wins behavior)
 - Input validation: `log_activity()` rejects non-dict, `register_intervention_callback()` rejects non-callable, `add_custom_verification_criterion()` rejects non-callable/empty name, `verify_results()` rejects non-dict
 
 ## Import Pattern
@@ -100,4 +171,9 @@ Run all at once with `make check`.
 # From application code (or use pip install -e ".[dev]")
 from anti_idling_system import AntiIdlingSystem
 from results_verification import ResultsVerificationFramework
+from multi_agent_performance import MultiAgentPerformanceOptimizer
+from recursive_self_improvement import RecursiveSelfImprovementProtocol
+from orchestrator import SelfOptimizationOrchestrator
+from filesystem_scanner import FilesystemScanner
+from llm_provider import LLMProvider
 ```
