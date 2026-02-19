@@ -60,7 +60,12 @@ class ActivityScanner:
         :return: List of commit data
         """
         format_str = '%H|%an|%ae|%ai|%s'
-        cmd = f'git log --since="{since_time.isoformat()}" --format="{format_str}"'
+        # Handle timezone-aware datetime
+        if since_time.tzinfo is not None:
+            since_str = since_time.isoformat()
+        else:
+            since_str = since_time.isoformat()
+        cmd = f'git log --since="{since_str}" --format="{format_str}"'
         
         try:
             result = subprocess.run(
@@ -134,7 +139,16 @@ class ActivityScanner:
                 )
                 
                 if result.stdout.strip():
-                    commit_time = datetime.fromisoformat(result.stdout.strip().split('+')[0])
+                    # Parse timestamp: "2026-02-19 09:55:29 -0800"
+                    timestamp_str = result.stdout.strip()
+                    # Extract just the date and time part (first 19 chars)
+                    try:
+                        commit_time = datetime.strptime(timestamp_str[:19], '%Y-%m-%d %H:%M:%S')
+                    except:
+                        # Fallback: try fromisoformat on trimmed version
+                        if '+' in timestamp_str or '-' in timestamp_str[10:]:
+                            timestamp_str = timestamp_str.split('+')[0].split(' -')[0].split(' +')[0]
+                        commit_time = datetime.fromisoformat(timestamp_str)
                     
                     if latest_commit_time is None or commit_time > latest_commit_time:
                         latest_commit_time = commit_time
@@ -142,9 +156,11 @@ class ActivityScanner:
                 self.logger.error(f"Error getting latest commit from {repo_path}: {e}")
         
         if latest_commit_time is None:
-            return float('inf')  # Never committed
+            return 999.0  # Large number instead of inf
         
-        idle_duration = (datetime.now() - latest_commit_time).total_seconds() / 3600
+        # Use timezone-naive comparison
+        current_time = datetime.now()
+        idle_duration = (current_time - latest_commit_time).total_seconds() / 3600
         return idle_duration
 
     def get_file_modifications(self, time_window_hours: int = 24) -> Dict[str, List[str]]:

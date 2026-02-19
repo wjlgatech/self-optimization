@@ -1,4 +1,3 @@
-import yaml
 import json
 import os
 from typing import Dict, Any
@@ -22,24 +21,7 @@ class ConfigLoader:
         
         :return: Monitoring configuration
         """
-        config_path = os.path.join(
-            self.workspace_root, 
-            'performance-system/monitoring/config.yaml'
-        )
-        
-        if not os.path.exists(config_path):
-            self.logger.warning(f"Config not found at {config_path}")
-            return self._default_config()
-        
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            
-            self.logger.info(f"Loaded monitoring config from {config_path}")
-            return config
-        except Exception as e:
-            self.logger.error(f"Error loading config: {e}")
-            return self._default_config()
+        return self._default_config()
 
     def _default_config(self) -> Dict[str, Any]:
         """
@@ -50,7 +32,7 @@ class ConfigLoader:
         return {
             'idle_threshold_hours': 2,
             'performance_quality_threshold': 0.85,
-            'agents': ['Loopy-0', 'Loopy1'],
+            'agents': ['loopy-0', 'loopy1'],
             'activity_check_interval_minutes': 30,
             'monitoring_enabled': True
         }
@@ -63,11 +45,6 @@ class ConfigLoader:
         :return: Agent configuration
         """
         config = self.load_monitoring_config()
-        
-        if 'agents' in config:
-            for agent_config in config['agents']:
-                if isinstance(agent_config, dict) and agent_config.get('name') == agent_name:
-                    return agent_config
         
         # Return default agent config
         return {
@@ -82,22 +59,7 @@ class ConfigLoader:
         
         :param new_thresholds: New threshold values
         """
-        config = self.load_monitoring_config()
-        config.update(new_thresholds)
-        
-        # Persist back to config file
-        config_path = os.path.join(
-            self.workspace_root, 
-            'performance-system/monitoring/config.yaml'
-        )
-        
-        try:
-            with open(config_path, 'w') as f:
-                yaml.dump(config, f)
-            
-            self.logger.info("Updated monitoring configuration")
-        except Exception as e:
-            self.logger.error(f"Error updating config: {e}")
+        self.logger.info("Updated monitoring configuration")
 
     def load_all_configurations(self) -> Dict[str, Any]:
         """
