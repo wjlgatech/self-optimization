@@ -11,8 +11,6 @@ src/
 ├── multi_agent_performance.py     # Multi-agent performance tracking
 ├── recursive_self_improvement.py  # Self-improvement protocol
 ├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
-├── activity_scanner.py            # Git-based activity scanning (commit-focused)
-├── reflection_generator.py        # Data-driven reflection generation
 ├── config_loader.py               # Loads performance-system/monitoring/config.yaml
 ├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
 ├── orchestrator.py                # Integration layer: wires all systems + config
