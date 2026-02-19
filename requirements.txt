@@ -1,0 +1,6 @@
+typing
+uuid
+pytest
+mypy
+pylint
+coverage
