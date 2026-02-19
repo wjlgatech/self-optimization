@@ -108,17 +108,70 @@ class AntiIdlingSystem:
 
     def generate_emergency_actions(self) -> List[str]:
         """
-        Generate emergency actions to break idle state
+        Generate emergency actions to break idle state.
+
+        Context-aware: analyzes recent activity_log to suggest contrasting actions.
+        If activity_log is empty, returns the full action pool for backward compatibility.
 
         :return: List of emergency action descriptions
         """
-        return [
+        full_pool = [
             "start_research_sprint",
             "design_experimental_prototype",
             "initiate_user_feedback_loop",
             "conduct_strategic_analysis",
             "explore_new_skill_development",
         ]
+
+        # Backward compatible: empty log returns full pool
+        if not self.activity_log:
+            return full_pool
+
+        # Analyze last 20 entries for type distribution
+        recent = self.activity_log[-20:]
+        type_counts: dict[str, int] = {}
+        for entry in recent:
+            activity_type = entry.get("type", "unknown")
+            type_counts[activity_type] = type_counts.get(activity_type, 0) + 1
+
+        # Map activity types to contrasting actions
+        contrast_map: dict[str, list[str]] = {
+            "research": ["design_experimental_prototype", "initiate_user_feedback_loop"],
+            "coding": ["initiate_user_feedback_loop", "conduct_strategic_analysis"],
+            "meeting": ["start_research_sprint", "explore_new_skill_development"],
+            "browsing": ["start_research_sprint", "design_experimental_prototype"],
+            "break": ["start_research_sprint", "conduct_strategic_analysis"],
+        }
+
+        # Find the dominant type
+        if type_counts:
+            dominant_type = max(type_counts, key=lambda t: type_counts[t])
+        else:
+            return full_pool
+
+        # Build context-aware suggestions
+        suggestions: list[str] = []
+
+        # Add contrasting actions for dominant type
+        contrasts = contrast_map.get(dominant_type, [])
+        suggestions.extend(contrasts)
+
+        # If agent stuck on one type (>60% of recent), add strategic pivot
+        total = sum(type_counts.values())
+        if type_counts.get(dominant_type, 0) / total > 0.6:
+            suggestions.append("conduct_strategic_analysis")
+            suggestions.append("explore_new_skill_development")
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        unique: list[str] = []
+        for s in suggestions:
+            if s not in seen:
+                seen.add(s)
+                unique.append(s)
+
+        # Always return at least 1 action
+        return unique if unique else full_pool[:1]
 
     def stop(self) -> None:
         """Stop the periodic check loop."""

@@ -15,6 +15,11 @@ class MultiAgentPerformanceOptimizer:
         self.performance_history: List[Dict[str, Any]] = []
         self.quality_threshold = quality_threshold
         self.optimization_strategies: List[Callable] = []
+        self.metric_weights: Dict[str, float] = {
+            "accuracy": 0.4,
+            "efficiency": 0.35,
+            "adaptability": 0.25,
+        }
 
         # Configure logging
         logging.basicConfig(
@@ -70,18 +75,26 @@ class MultiAgentPerformanceOptimizer:
 
     def _calculate_performance_score(self, performance_data: Dict[str, Any]) -> float:
         """
-        Calculate a comprehensive performance score
+        Calculate a weighted performance score.
+
+        Uses metric_weights to produce a weighted average of available metrics.
+        Returns 0.0 if no valid metrics are present.
 
         :param performance_data: Dictionary of performance metrics
         :return: Calculated performance score
         """
-        # Placeholder for complex performance calculation
-        # Can be customized based on specific performance metrics
-        metrics = [
-            performance_data.get(key, 0) for key in ["accuracy", "efficiency", "adaptability"]
-        ]
+        weighted_sum = 0.0
+        total_weight = 0.0
 
-        return sum(metrics) / len(metrics) if metrics else 0
+        for metric, weight in self.metric_weights.items():
+            value = performance_data.get(metric)
+            if isinstance(value, (int, float)):
+                weighted_sum += float(value) * weight
+                total_weight += weight
+
+        if total_weight == 0.0:
+            return 0.0
+        return weighted_sum / total_weight
 
     def register_optimization_strategy(self, strategy: Callable) -> None:
         """
@@ -154,11 +167,53 @@ class MultiAgentPerformanceOptimizer:
 
     def _analyze_performance_trends(self, performance_logs: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Analyze performance trends from recent logs
+        Analyze performance trends from recent logs.
+
+        Groups logs by agent_id, splits into first-half vs second-half,
+        and computes % change. >5% = improving, <-5% = declining.
 
         :param performance_logs: List of recent performance logs
-        :return: Performance trend analysis
+        :return: Performance trend analysis with real agent data
         """
-        # Placeholder for trend analysis
-        # Can be expanded to include more sophisticated trend detection
-        return {"overall_trend": "stable", "improving_agents": [], "declining_agents": []}
+        if not performance_logs:
+            return {"overall_trend": "stable", "improving_agents": [], "declining_agents": []}
+
+        # Group by agent_id
+        agent_scores: Dict[str, List[float]] = {}
+        for log in performance_logs:
+            aid = log.get("agent_id", "unknown")
+            score = log.get("performance_score")
+            if isinstance(score, (int, float)):
+                agent_scores.setdefault(aid, []).append(float(score))
+
+        improving: List[str] = []
+        declining: List[str] = []
+
+        for aid, scores in agent_scores.items():
+            if len(scores) < 2:
+                continue
+            mid = len(scores) // 2
+            first_half_avg = sum(scores[:mid]) / mid
+            second_half_avg = sum(scores[mid:]) / len(scores[mid:])
+
+            if first_half_avg == 0:
+                continue
+            pct_change = (second_half_avg - first_half_avg) / first_half_avg * 100
+
+            if pct_change > 5:
+                improving.append(aid)
+            elif pct_change < -5:
+                declining.append(aid)
+
+        if len(improving) > len(declining):
+            overall = "improving"
+        elif len(declining) > len(improving):
+            overall = "declining"
+        else:
+            overall = "stable"
+
+        return {
+            "overall_trend": overall,
+            "improving_agents": improving,
+            "declining_agents": declining,
+        }
