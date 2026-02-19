@@ -1,177 +1,210 @@
-# Self-Optimization Systems
+# Self-Optimization System
 
-A Python framework for building self-monitoring intelligent agents that detect idle states, verify output quality, and maintain accountability through measurable criteria.
+A self-monitoring framework for OpenClaw agents. Detects idle states from real filesystem activity (git commits, file modifications), generates data-driven daily reflections, tracks performance across multiple agents, and triggers self-improvement when productivity drops.
 
-## Purpose
-
-When building autonomous agents or long-running AI systems, two problems emerge quickly:
-
-1. **Agents go idle** — they stall, spin on low-value tasks, or fail to self-correct when unproductive
-2. **Output quality is unmeasured** — agents produce results with no structured check on whether those results are specific, actionable, or compounding
-
-This library provides two independent, zero-dependency modules to solve both:
-
-| Module | What it does |
-|--------|-------------|
-| `AntiIdlingSystem` | Tracks agent activity over time, calculates idle rates, triggers intervention callbacks when productivity drops below a threshold |
-| `ResultsVerificationFramework` | Evaluates output dicts against 5 quality criteria (Specific, Measurable, Actionable, Reusable, Compoundable), logs verification history, and tracks success rates |
-
-## When to use this
-
-- You're building an **autonomous agent loop** and need a watchdog that fires callbacks when the agent isn't producing
-- You want to **gate outputs** through a quality check before passing them downstream
-- You need **audit trails** — both modules maintain bounded history logs exportable as JSON
-- You want a **lightweight, stdlib-only** solution (no numpy, no frameworks, no external deps)
-
-## Installation
+## Install (one-time setup)
 
 ```bash
-git clone https://github.com/wjlgatech/self-optimization.git
-cd self-optimization
-
+cd ~/.openclaw/workspace/self-optimization
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Quick Start
+Verify the install works:
 
-### Anti-Idling: Monitor agent productivity
-
-```python
-from anti_idling_system import AntiIdlingSystem
-
-# Alert if agent is idle more than 80% of the time
-system = AntiIdlingSystem(idle_threshold=0.8)
-
-# Register what happens when idling is detected
-def on_idle():
-    print("Agent is slacking — triggering new task!")
-
-system.register_intervention_callback(on_idle)
-
-# Log productive work as it happens
-system.log_activity({"type": "research", "duration": 3600, "is_productive": True})
-system.log_activity({"type": "waiting", "duration": 600, "is_productive": False})
-
-# Check idle rate (returns 0.0–1.0, clamped)
-rate = system.calculate_idle_rate(time_window=86400)
-print(f"Idle rate: {rate:.1%}")
-
-# Or run detection — fires callbacks if above threshold
-system.detect_and_interrupt_idle_state()
-
-# For continuous monitoring (in a thread or background process)
-import threading
-t = threading.Thread(target=system.run_periodic_check, kwargs={"interval": 60})
-t.start()
-# ... later ...
-system.stop()  # graceful shutdown
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py status
 ```
 
-### Results Verification: Check output quality
+You should see JSON output with `agent_id`, `registered_agents`, `llm_available`, etc.
 
-```python
-from results_verification import ResultsVerificationFramework
+## Running as Loopy-0 (primary agent)
 
-fw = ResultsVerificationFramework(max_history=500)
+### Quick status check
 
-# Verify a result dict against 5 SMARC criteria
-result = {
-    "next_step": "deploy to staging",   # actionable ✓
-    "score": 92,                         # measurable ✓
-    "details": [{"latency": 42}],        # compoundable ✓
-}
-# specific ✓ (non-empty, no None values), reusable ✓ (>1 key)
-
-verification = fw.verify_results(result)
-# {'specific': True, 'measurable': True, 'actionable': True,
-#  'reusable': True, 'compoundable': True}
-
-# Check if ALL criteria passed
-print(fw.verification_history[-1]["overall_valid"])  # True
-
-# Add domain-specific criteria
-def check_confidence(results):
-    return results.get("confidence", 0) > 0.8
-
-fw.add_custom_verification_criterion("confident", check_confidence)
-
-# Track success rate over time
-print(f"Success rate: {fw.get_verification_success_rate():.1f}%")
-
-# Export history for auditing
-fw.export_verification_history("audit.json")
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py status
 ```
 
-### Using both together
+### Manual idle check (scans last 2 hours of activity)
 
-```python
-from anti_idling_system import AntiIdlingSystem
-from results_verification import ResultsVerificationFramework
-
-agent = AntiIdlingSystem(idle_threshold=0.5)
-verifier = ResultsVerificationFramework()
-
-def intervention():
-    """When agent idles, force a task and verify the output."""
-    output = run_emergency_task()  # your agent logic
-    v = verifier.verify_results(output)
-    if not all(v.values()):
-        log.warning(f"Low-quality emergency output: {v}")
-
-agent.register_intervention_callback(intervention)
-agent.run_periodic_check(interval=300)  # check every 5 minutes
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
 ```
 
-## SMARC Verification Criteria
+Output includes: `activities_found`, `idle_rate`, `triggered` (true if idle threshold exceeded).
 
-Each result dict is checked against 5 criteria:
+### Manual daily review (scans last 24 hours, writes reflection)
 
-| Criterion | Passes when |
-|-----------|------------|
-| **Specific** | Dict is non-empty and no values are `None` |
-| **Measurable** | At least one value is `int`, `float`, or `str` |
-| **Actionable** | Dict contains `"next_step"` or `"recommendation"` key |
-| **Reusable** | Dict has more than 1 key |
-| **Compoundable** | At least one value is a `list` or `dict` |
-
-A result that passes all 5 (e.g. `{"next_step": "go", "score": 95, "items": [1,2]}`) gets `overall_valid=True`.
-
-## Project Structure
-
-```
-src/
-├── anti_idling_system.py         # Idle detection & intervention
-├── results_verification.py       # SMARC quality verification
-├── multi_agent_performance.py    # Multi-agent performance tracking
-├── recursive_self_improvement.py # Self-improvement protocol
-└── __init__.py
-tests/
-├── test_anti_idling_unit.py          # 48 unit tests
-├── test_results_verification_unit.py # 60 unit tests
-├── test_contract_and_regression.py   # 27 contract + regression tests
-├── test_edge_cases.py                # 24 edge case tests
-├── test_functional.py                # 12 functional scenario tests
-├── test_integration.py               # 11 integration tests
-├── conftest.py
-└── __init__.py
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py --agent-id loopy-0 daily-review
 ```
 
-182 tests, all passing. Zero external dependencies at runtime.
+This will:
+1. Scan all git repos in `~/.openclaw/workspace/` for commits
+2. Scan file modifications across the workspace
+3. Calculate performance metrics
+4. Write a data-driven reflection to `~/.openclaw/workspace/memory/daily-reflections/YYYY-MM-DD-reflection.md`
+5. Persist state to `state/` directory
+
+### Check intervention tier
+
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py intervention --agent loopy-0
+```
+
+Returns the current intervention tier (none/tier1/tier2/tier3) based on performance thresholds from `config.yaml`.
+
+## Running as Loopy-1 (parallel agent)
+
+Same commands, just change `--agent-id`:
+
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py --agent-id loopy-1 idle-check
+.venv/bin/python src/__main__.py --agent-id loopy-1 daily-review
+```
+
+## Automatic scheduling (cron)
+
+Cron jobs are configured in `~/.openclaw/cron/jobs.json`:
+
+| Job ID | Schedule | What it does |
+|--------|----------|-------------|
+| `self-opt-idle-check-loopy0` | Every 2 hours | Idle check for Loopy-0 |
+| `self-opt-idle-check-loopy1` | Every 2 hours (offset 15 min) | Idle check for Loopy-1 |
+| `self-opt-daily-review` | Daily at 11 PM | Full daily review + reflection |
+
+The cron commands use absolute venv paths so they work without `source activate`:
+
+```bash
+cd ~/.openclaw/workspace/self-optimization && .venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
+```
+
+### Verify cron is working
+
+After a cron cycle runs, check state files:
+
+```bash
+cat ~/.openclaw/workspace/self-optimization/state/last_run.json
+ls -la ~/.openclaw/workspace/memory/daily-reflections/
+```
+
+## Daemon mode (alternative to cron)
+
+Run as a long-lived process instead of cron jobs:
+
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py run-daemon --interval 7200 --review-hour 23
+```
+
+This runs idle checks every 7200 seconds (2 hours) and the daily review once at hour 23 (11 PM). Stop with Ctrl+C.
+
+## What the system scans
+
+The filesystem scanner looks at real activity in `~/.openclaw/workspace/`:
+
+- **Git commits**: Runs `git log` in the workspace root and all immediate subdirectories that have a `.git` directory
+- **File modifications**: Walks the workspace tree, checks `mtime` against the time window
+- **Daily reflections**: Parses markdown files in `memory/daily-reflections/` and `memory/reflections/daily/`
+
+Idle = no commits and no file modifications across any repository within the time window (default: 2 hours for idle check, 24 hours for daily review).
+
+## LLM-enhanced analysis (optional)
+
+Set the `ANTHROPIC_API_KEY` environment variable to enable AI-powered analysis:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py daily-review
+```
+
+When the API key is set, daily reflections include an "AI Reflection" section with intelligent narrative. Without the key, everything still works using rule-based analysis.
+
+Uses `claude-haiku-4-5-20251001` via stdlib `urllib.request` (no extra dependencies).
+
+## Monitoring config
+
+The system reads thresholds and agent definitions from:
+`~/.openclaw/workspace/performance-system/monitoring/config.yaml`
+
+```yaml
+monitoring:
+  agents:
+    - loopy      # normalized to loopy-0
+    - loopy1     # normalized to loopy-1
+
+performance_thresholds:
+  goal_completion_rate:
+    warning_level: 0.7
+    critical_level: 0.5
+  task_efficiency:
+    warning_level: 0.65
+    critical_level: 0.4
+
+intervention_escalation:
+  tier1:
+    duration: 2 weeks
+    actions:
+      - performance_review
+      - skill_assessment
+  tier2:
+    duration: 1 month
+    actions:
+      - targeted_coaching
+      - personalized_learning_plan
+  tier3:
+    duration: 3 months
+    actions:
+      - comprehensive_performance_rehabilitation
+      - external_skill_development_resources
+```
+
+If the config file is missing, sensible defaults are used.
+
+## State files
+
+Runtime state is persisted to `~/.openclaw/workspace/self-optimization/state/` (gitignored):
+
+| File | Contents |
+|------|---------|
+| `last_run.json` | Timestamp and result of the most recent operation |
+| `activity_log.json` | Recent activity entries (FIFO capped at 100) |
+| `performance_history.json` | Performance tracking data over time |
+| `improvement_history.json` | Self-improvement execution log |
+| `capability_map.json` | Current capability proficiency levels |
+
+## Troubleshooting
+
+**"No module named orchestrator"**: You need to run from the project directory or use the venv python:
+```bash
+cd ~/.openclaw/workspace/self-optimization
+.venv/bin/python src/__main__.py status
+```
+
+**activities_found is 0**: The scanner only finds activity within the time window. For idle-check that's 2 hours. Make a commit or edit a file, wait a moment, then re-run.
+
+**daily_reflection.sh still running**: The old script has been deprecated and now forwards to the orchestrator. To fully remove it, delete `~/.openclaw/workspace/tools/daily_reflection.sh`.
+
+**State files missing**: They're created on first run. Run any command (`status`, `idle-check`, `daily-review`) and the `state/` directory will be populated.
 
 ## Development
 
 ```bash
-make lint        # ruff check
-make format      # ruff format
-make typecheck   # mypy src/
-make test        # pytest
-make check       # all three gates (required before merge)
-make clean       # remove caches
+cd ~/.openclaw/workspace/self-optimization
+source .venv/bin/activate
+make check   # ruff lint + mypy typecheck + pytest (259 tests)
 ```
 
-Quality gates: **ruff** (lint + format) + **mypy** (type check) + **pytest** (182 tests).
+See `CLAUDE.md` for architecture details, design decisions, and test conventions.
 
 ## License
 

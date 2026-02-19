@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Six Python modules (stdlib only, except optional `urllib` for LLM):
+Python modules (stdlib only, except optional `urllib` for LLM):
 
 ```
 src/
@@ -11,8 +11,11 @@ src/
 ├── multi_agent_performance.py     # Multi-agent performance tracking
 ├── recursive_self_improvement.py  # Self-improvement protocol
 ├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
+├── activity_scanner.py            # Git-based activity scanning (commit-focused)
+├── reflection_generator.py        # Data-driven reflection generation
+├── config_loader.py               # Loads performance-system/monitoring/config.yaml
 ├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
-├── orchestrator.py                # Integration layer: wires all systems
+├── orchestrator.py                # Integration layer: wires all systems + config
 ├── __main__.py                    # CLI entry point
 └── __init__.py
 tests/
@@ -21,6 +24,7 @@ tests/
 ├── test_multi_agent_performance.py   # Performance optimizer tests
 ├── test_recursive_self_improvement.py # Self-improvement tests
 ├── test_filesystem_scanner.py        # Scanner tests (real filesystem)
+├── test_config_loader.py            # Config loading + multi-agent tests
 ├── test_llm_provider.py             # LLM provider tests
 ├── test_orchestrator.py             # Orchestrator tests (real filesystem)
 ├── test_integration.py               # Integration tests
@@ -37,12 +41,17 @@ state/                                # Runtime state (gitignored)
 ```
 ┌─────────────────────────────────────────────────┐
 │                  Orchestrator                     │
-│  (wires 4 systems, scheduling, state persistence)│
-├─────────────┬───────────────┬───────────────────┤
-│ AntiIdling  │ Performance   │ SelfImprovement   │
-│ + Filesystem│ + Real Trends │ + Real Execution  │
-│   Scanner   │   from Data   │ + LLM Proposals   │
-├─────────────┴───────────────┴───────────────────┤
+│  (config, multi-agent, scheduling, persistence)  │
+├────────────┬───────────────┬────────────────────┤
+│ AntiIdling │ Performance   │ SelfImprovement    │
+│ +Filesystem│ +Config Thresh│ +Real Execution    │
+│  Scanner   │ +Intervention │ +LLM Proposals     │
+├────────────┴───────────────┴────────────────────┤
+│            ConfigLoader (config.yaml)            │
+│  Agents: loopy-0, loopy-1 (from monitoring cfg) │
+│  Thresholds: goal_completion, task_efficiency    │
+│  Intervention tiers: tier1/tier2/tier3           │
+├─────────────────────────────────────────────────┤
 │              LLM Provider (optional)             │
 │  urllib → Anthropic API (ANTHROPIC_API_KEY)      │
 │  Falls back to rule-based if no key              │
@@ -52,14 +61,36 @@ state/                                # Runtime state (gitignored)
 Hybrid approach: rules handle scheduling, metrics, state, thresholds.
 LLM (optional) enhances analysis and reflection writing.
 
+## Multi-Agent Support
+
+Agents are defined in `performance-system/monitoring/config.yaml`:
+- `loopy` → normalized to `loopy-0` (primary agent)
+- `loopy1` → normalized to `loopy-1` (parallel tasks)
+
+Run as a specific agent: `python src/__main__.py --agent-id loopy-1 idle-check`
+
+## Monitoring Config Integration
+
+The orchestrator reads `~/.openclaw/workspace/performance-system/monitoring/config.yaml`:
+- Agent names (normalized: `loopy` → `loopy-0`)
+- Performance thresholds (goal_completion_rate, task_efficiency)
+- Intervention escalation tiers (tier1/tier2/tier3 with durations and actions)
+- Falls back to defaults if config file is missing
+
 ## CLI Commands
 
 ```bash
 # Idle check (every 2 hours via cron)
 python src/__main__.py idle-check
 
-# Daily review (once daily at 11 PM via cron)
+# Idle check as Loopy-1
+python src/__main__.py --agent-id loopy-1 idle-check
+
+# Daily review (once daily at 11 PM via cron — replaces daily_reflection.sh)
 python src/__main__.py daily-review
+
+# Check intervention tier for an agent
+python src/__main__.py intervention --agent loopy-0
 
 # Long-running daemon
 python src/__main__.py run-daemon --interval 7200 --review-hour 23
@@ -71,8 +102,9 @@ python src/__main__.py status
 ## Cron Setup
 
 Jobs are configured in `~/.openclaw/cron/jobs.json`:
-- `self-opt-idle-check`: every 2 hours
-- `self-opt-daily-review`: daily at 11 PM
+- `self-opt-idle-check-loopy0`: Loopy-0 idle check every 2 hours
+- `self-opt-idle-check-loopy1`: Loopy-1 idle check every 2 hours (offset 15 min)
+- `self-opt-daily-review`: daily at 11 PM (replaces `tools/daily_reflection.sh`)
 
 ## State Persistence
 
@@ -123,7 +155,7 @@ make test
 pytest tests/ -v
 ```
 
-200+ tests, all passing. Pytest config lives in `pyproject.toml`.
+259 tests, all passing. Pytest config lives in `pyproject.toml`.
 
 ## Quality Gates
 
@@ -131,7 +163,7 @@ All three must pass before merging:
 
 1. **Ruff** — linting and import sorting (`ruff check`)
 2. **Mypy** — type checking on `src/` (`mypy src/`)
-3. **Pytest** — 200+ tests (`pytest tests/ -v`)
+3. **Pytest** — 259 tests (`pytest tests/ -v`)
 
 Run all at once with `make check`.
 
@@ -164,6 +196,11 @@ Run all at once with `make check`.
 - `_implement_improvement()` updates capability_map: existing +0.1 proficiency (capped 1.0), new starts at 0.1
 - `logging.basicConfig()` is called in constructors (first-call-wins behavior)
 - Input validation: `log_activity()` rejects non-dict, `register_intervention_callback()` rejects non-callable, `add_custom_verification_criterion()` rejects non-callable/empty name, `verify_results()` rejects non-dict
+- `config_loader.py` parses YAML subset with regex (no PyYAML dependency)
+- Agent names normalized: `loopy` → `loopy-0`, `loopy1` → `loopy-1`
+- Orchestrator registers ALL agents from config.yaml, not just the current one
+- `get_intervention_tier()` maps performance score to tier1/tier2/tier3 via config thresholds
+- `daily_reflection.sh` is deprecated; forwards to `python src/__main__.py daily-review`
 
 ## Import Pattern
 
@@ -175,5 +212,6 @@ from multi_agent_performance import MultiAgentPerformanceOptimizer
 from recursive_self_improvement import RecursiveSelfImprovementProtocol
 from orchestrator import SelfOptimizationOrchestrator
 from filesystem_scanner import FilesystemScanner
+from config_loader import load_monitoring_config
 from llm_provider import LLMProvider
 ```

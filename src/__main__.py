@@ -5,6 +5,7 @@ Usage:
     python src/__main__.py daily-review
     python src/__main__.py run-daemon [--interval 7200] [--review-hour 23]
     python src/__main__.py status
+    python src/__main__.py intervention [--agent loopy-0]
 """
 
 import argparse
@@ -36,6 +37,11 @@ def main() -> None:
         default="loopy-0",
         help="Agent identifier (default: loopy-0)",
     )
+    parser.add_argument(
+        "--config-path",
+        default="",
+        help="Path to monitoring config.yaml (default: auto-detect)",
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -58,6 +64,14 @@ def main() -> None:
     # status
     subparsers.add_parser("status", help="Show current system status")
 
+    # intervention
+    intervention_parser = subparsers.add_parser(
+        "intervention", help="Check intervention tier for an agent"
+    )
+    intervention_parser.add_argument(
+        "--agent", default="", help="Agent to check (default: current agent)"
+    )
+
     args = parser.parse_args()
 
     # Configure logging
@@ -76,6 +90,7 @@ def main() -> None:
         state_dir=args.state_dir,
         workspace_dir=args.workspace_dir,
         agent_id=args.agent_id,
+        config_path=args.config_path,
     )
 
     if args.command == "idle-check":
@@ -95,6 +110,11 @@ def main() -> None:
 
     elif args.command == "status":
         result = orch.status()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "intervention":
+        agent = args.agent if args.agent else ""
+        result = orch.get_intervention_tier(agent)
         print(json.dumps(result, indent=2, default=str))
 
 
