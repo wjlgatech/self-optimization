@@ -161,8 +161,6 @@ class RecursiveSelfImprovementProtocol:
         :param proposal: Improvement proposal to execute
         """
         try:
-            # Placeholder for improvement execution
-            # Actual implementation would depend on specific improvement type
             improvement_result = self._implement_improvement(proposal)
 
             # Log improvement

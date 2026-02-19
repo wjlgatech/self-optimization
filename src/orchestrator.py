@@ -7,6 +7,7 @@ multi-agent support, and monitoring config integration.
 import json
 import logging
 import os
+import signal
 import time
 from datetime import datetime
 from typing import Any, Dict, List
@@ -196,10 +197,14 @@ class SelfOptimizationOrchestrator:
                 productive_count += 1
 
         # 3. Update performance metrics
+        # Adaptability: derived from activity type diversity (more types = more adaptable)
+        activity_types = {a.get("type", "unknown") for a in activities}
+        adaptability = min(1.0, len(activity_types) / 5.0) if activities else 0.0
+
         perf_data = {
             "accuracy": min(1.0, productive_count / max(1, len(activities))),
             "efficiency": min(1.0, len(activities) / 100.0),
-            "adaptability": 0.7,  # baseline
+            "adaptability": adaptability,
         }
         self.performance.update_agent_performance(self._agent_internal_id, perf_data)
 
@@ -249,6 +254,13 @@ class SelfOptimizationOrchestrator:
         """Run as a long-lived daemon: idle checks on interval, daily review once."""
         self._daemon_running = True
         last_review_date = ""
+
+        # Handle SIGTERM for clean shutdown (e.g. when killed by process manager)
+        def _handle_sigterm(signum: int, frame: Any) -> None:
+            logger.info("Received SIGTERM, shutting down daemon")
+            self._daemon_running = False
+
+        signal.signal(signal.SIGTERM, _handle_sigterm)
         logger.info("Daemon started: idle every %ds, review at hour %d", idle_interval, review_hour)
 
         while self._daemon_running:
