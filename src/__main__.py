@@ -1,153 +1,122 @@
-#!/usr/bin/env python3
-import sys
-import os
-import json
-from datetime import datetime
+"""CLI entry point for the self-optimization system.
+
+Usage:
+    python src/__main__.py idle-check
+    python src/__main__.py daily-review
+    python src/__main__.py run-daemon [--interval 7200] [--review-hour 23]
+    python src/__main__.py status
+    python src/__main__.py intervention [--agent loopy-0]
+"""
+
 import argparse
-from pathlib import Path
+import json
+import logging
+import os
+import sys
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Ensure src/ is importable
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.activity_scanner import ActivityScanner
-from src.reflection_generator import ReflectionGenerator
-from src.config_loader import ConfigLoader
+from orchestrator import SelfOptimizationOrchestrator  # noqa: E402
 
-class SystemOrchestrator:
-    def __init__(self, workspace_root: str):
-        self.workspace_root = workspace_root
-        self.state_dir = Path(workspace_root) / 'self-optimization' / 'state'
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        
-        self.scanner = ActivityScanner(workspace_root)
-        self.config_loader = ConfigLoader(workspace_root)
-        self.reflection_gen = ReflectionGenerator(self.scanner)
 
-    def status_check(self) -> dict:
-        """Get system status"""
-        try:
-            idle_duration = self.scanner.get_idle_duration()
-            activity = self.scanner.calculate_activity_score(time_window_hours=24)
-            
-            status = {
-                'agent_id': 'loopy-0',
-                'timestamp': datetime.now().isoformat(),
-                'llm_available': True,
-                'workspace_root': self.workspace_root,
-                'repositories_found': len(self.scanner.subdirectories),
-                'current_idle_hours': idle_duration,
-                'activities_24h': activity['total_commits'],
-                'repos_active_24h': activity['repositories_active'],
-                'system_status': 'operational'
-            }
-            
-            print(json.dumps(status, indent=2))
-            self._save_state('status', status)
-            return status
-        except Exception as e:
-            print(f"ERROR in status_check: {e}", file=sys.stderr)
-            return {'error': str(e)}
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Self-optimization system for OpenClaw agents")
+    parser.add_argument(
+        "--state-dir",
+        default="",
+        help="State persistence directory (default: ~/.openclaw/workspace/self-optimization/state)",
+    )
+    parser.add_argument(
+        "--workspace-dir",
+        default="",
+        help="Workspace directory to scan (default: ~/.openclaw/workspace)",
+    )
+    parser.add_argument(
+        "--agent-id",
+        default="loopy-0",
+        help="Agent identifier (default: loopy-0)",
+    )
+    parser.add_argument(
+        "--config-path",
+        default="",
+        help="Path to monitoring config.yaml (default: auto-detect)",
+    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
-    def idle_check(self) -> dict:
-        """Check idle state and trigger interventions if needed"""
-        try:
-            idle_duration = self.scanner.get_idle_duration()
-            activity = self.scanner.calculate_activity_score(time_window_hours=2)
-            
-            triggered = idle_duration > 2.0  # 2-hour threshold
-            
-            result = {
-                'timestamp': datetime.now().isoformat(),
-                'idle_duration_hours': idle_duration,
-                'activities_found': activity['total_commits'],
-                'idle_rate': activity['is_idle'],
-                'triggered': triggered,
-                'repositories_checked': len(self.scanner.subdirectories),
-                'breakdown': activity['breakdown_by_repo']
-            }
-            
-            print(json.dumps(result, indent=2))
-            self._save_state('idle_check', result)
-            
-            if triggered:
-                print("\n⚠️  IDLE STATE DETECTED - Triggering interventions")
-            
-            return result
-        except Exception as e:
-            print(f"ERROR in idle_check: {e}", file=sys.stderr)
-            return {'error': str(e)}
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    def daily_review(self) -> dict:
-        """Generate daily reflection based on actual activity"""
-        try:
-            reflection = self.reflection_gen.generate_daily_reflection()
-            
-            # Create reflection file
-            today = datetime.now().strftime('%Y-%m-%d')
-            reflection_dir = Path(self.workspace_root) / 'memory' / 'daily-reflections'
-            reflection_dir.mkdir(parents=True, exist_ok=True)
-            reflection_path = reflection_dir / f'{today}-reflection.md'
-            
-            self.reflection_gen.save_reflection(reflection, str(reflection_path))
-            
-            result = {
-                'timestamp': datetime.now().isoformat(),
-                'activities_found': reflection['activity_summary']['total_commits'],
-                'repositories_active': reflection['activity_summary']['repositories_active'],
-                'is_idle': reflection['activity_summary']['is_idle'],
-                'productivity_score': reflection['quality_metrics']['productivity_score'],
-                'achievements': len(reflection['achievements']),
-                'reflection_saved_to': str(reflection_path)
-            }
-            
-            print(json.dumps(result, indent=2))
-            print(f"\nReflection saved to: {reflection_path}")
-            
-            self._save_state('daily_review', result)
-            return result
-        except Exception as e:
-            print(f"ERROR in daily_review: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            return {'error': str(e)}
+    # idle-check
+    subparsers.add_parser("idle-check", help="Run a single idle check")
 
-    def _save_state(self, check_type: str, result: dict):
-        """Persist state to JSON"""
-        try:
-            # Save specific check result
-            state_file = self.state_dir / f'{check_type}.json'
-            with open(state_file, 'w') as f:
-                json.dump(result, f, indent=2)
-            
-            # Also update last_run.json
-            last_run_file = self.state_dir / 'last_run.json'
-            last_run = {}
-            if last_run_file.exists():
-                with open(last_run_file, 'r') as f:
-                    last_run = json.load(f)
-            
-            last_run[check_type] = result
-            with open(last_run_file, 'w') as f:
-                json.dump(last_run, f, indent=2)
-        except Exception as e:
-            print(f"ERROR saving state: {e}", file=sys.stderr)
+    # daily-review
+    subparsers.add_parser("daily-review", help="Run a full daily review")
 
-def main():
-    parser = argparse.ArgumentParser(description='Loopy-0 Self-Optimization System')
-    parser.add_argument('command', choices=['status', 'idle-check', 'daily-review'],
-                       help='Command to execute')
-    
+    # run-daemon
+    daemon_parser = subparsers.add_parser("run-daemon", help="Run as a daemon")
+    daemon_parser.add_argument(
+        "--interval", type=int, default=7200, help="Idle check interval in seconds"
+    )
+    daemon_parser.add_argument(
+        "--review-hour", type=int, default=23, help="Hour to run daily review (0-23)"
+    )
+
+    # status
+    subparsers.add_parser("status", help="Show current system status")
+
+    # intervention
+    intervention_parser = subparsers.add_parser(
+        "intervention", help="Check intervention tier for an agent"
+    )
+    intervention_parser.add_argument(
+        "--agent", default="", help="Agent to check (default: current agent)"
+    )
+
     args = parser.parse_args()
-    
-    workspace_root = os.path.expanduser('~/.openclaw/workspace')
-    orchestrator = SystemOrchestrator(workspace_root)
-    
-    if args.command == 'status':
-        orchestrator.status_check()
-    elif args.command == 'idle-check':
-        orchestrator.idle_check()
-    elif args.command == 'daily-review':
-        orchestrator.daily_review()
 
-if __name__ == '__main__':
+    # Configure logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    # Create orchestrator
+    orch = SelfOptimizationOrchestrator(
+        state_dir=args.state_dir,
+        workspace_dir=args.workspace_dir,
+        agent_id=args.agent_id,
+        config_path=args.config_path,
+    )
+
+    if args.command == "idle-check":
+        result = orch.idle_check()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "daily-review":
+        result = orch.daily_review()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "run-daemon":
+        try:
+            orch.run_daemon(idle_interval=args.interval, review_hour=args.review_hour)
+        except KeyboardInterrupt:
+            orch.stop_daemon()
+            print("\nDaemon stopped.")
+
+    elif args.command == "status":
+        result = orch.status()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "intervention":
+        agent = args.agent if args.agent else ""
+        result = orch.get_intervention_tier(agent)
+        print(json.dumps(result, indent=2, default=str))
+
+
+if __name__ == "__main__":
     main()

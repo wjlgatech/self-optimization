@@ -1,6 +1,7 @@
 """Orchestrator: wires all 4 self-optimization systems together.
 
-Provides state persistence, idle checking, daily review, and daemon mode.
+Provides state persistence, idle checking, daily review, daemon mode,
+multi-agent support, and monitoring config integration.
 """
 
 import json
@@ -11,6 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from anti_idling_system import AntiIdlingSystem
+from config_loader import load_monitoring_config
 from filesystem_scanner import FilesystemScanner
 from llm_provider import LLMProvider
 from multi_agent_performance import MultiAgentPerformanceOptimizer
@@ -58,6 +60,7 @@ class SelfOptimizationOrchestrator:
         agent_id: str = "loopy-0",
         idle_threshold: float = 0.10,
         quality_threshold: float = 0.85,
+        config_path: str = "",
     ) -> None:
         # Resolve directories
         if not workspace_dir:
@@ -68,6 +71,14 @@ class SelfOptimizationOrchestrator:
         self.workspace_dir = workspace_dir
         self.agent_id = agent_id
         self._daemon_running = False
+
+        # Load monitoring config (agent names, thresholds, intervention tiers)
+        self.config = load_monitoring_config(config_path)
+
+        # Apply config thresholds if they override defaults
+        gcr = self.config.get("thresholds", {}).get("goal_completion_rate", {})
+        if gcr.get("warning"):
+            quality_threshold = gcr["warning"]  # use warning level as quality bar
 
         # State persistence
         self.state = StateManager(state_dir)
@@ -84,10 +95,19 @@ class SelfOptimizationOrchestrator:
         self.scanner = FilesystemScanner(workspace_dir=workspace_dir)
         self.llm = LLMProvider()
 
-        # Register agent
-        self._agent_internal_id = self.performance.register_agent(
-            {"name": agent_id, "type": "autonomous"}
-        )
+        # Register all agents from config (or just the current one)
+        self._agent_ids: Dict[str, str] = {}  # agent_name -> internal perf ID
+        config_agents = self.config.get("agents", [])
+        if agent_id not in config_agents:
+            config_agents = [agent_id] + config_agents
+
+        for name in config_agents:
+            internal_id = self.performance.register_agent(
+                {"name": name, "type": "autonomous"}
+            )
+            self._agent_ids[name] = internal_id
+
+        self._agent_internal_id = self._agent_ids[agent_id]
 
         # Wire idle callback to improvement cycle
         self.anti_idling.register_intervention_callback(self._on_idle_triggered)
@@ -201,6 +221,9 @@ class SelfOptimizationOrchestrator:
         # 6. Identify capability gaps
         review["capability_gaps"] = self.improvement._identify_capability_gaps()
 
+        # 6b. Assess intervention tier from config thresholds
+        review["intervention"] = self.get_intervention_tier()
+
         # 7. Generate and execute top improvement proposal
         proposals = self.improvement.generate_improvement_proposals()
         if proposals:
@@ -261,13 +284,59 @@ class SelfOptimizationOrchestrator:
             "workspace_dir": self.workspace_dir,
             "activity_log_size": len(self.anti_idling.activity_log),
             "registered_agents": len(self.performance.agents),
+            "all_agents": list(self._agent_ids.keys()),
             "capability_count": len(self.improvement.capability_map),
             "improvement_history_size": len(self.improvement.improvement_history),
             "verification_history_size": len(self.verification.verification_history),
             "llm_available": self.llm.available,
             "last_run": last_run,
             "daemon_running": self._daemon_running,
+            "config": {
+                "thresholds": self.config.get("thresholds", {}),
+                "monitoring_interval": self.config.get("monitoring_interval", ""),
+            },
         }
+
+    def get_intervention_tier(self, agent_name: str = "") -> Dict[str, Any]:
+        """Determine intervention tier for an agent based on config thresholds.
+
+        Returns: {tier, actions, reason} or {tier: "none"} if performance is OK.
+        """
+        if not agent_name:
+            agent_name = self.agent_id
+
+        internal_id = self._agent_ids.get(agent_name)
+        if not internal_id or internal_id not in self.performance.agents:
+            return {"tier": "unknown", "reason": f"Agent {agent_name} not found"}
+
+        score = self.performance.agents[internal_id].get("performance_score", 0.0)
+        thresholds = self.config.get("thresholds", {})
+        tiers = self.config.get("intervention_tiers", {})
+
+        gcr = thresholds.get("goal_completion_rate", {})
+        critical = gcr.get("critical", 0.5)
+        warning = gcr.get("warning", 0.7)
+
+        if score < critical:
+            tier_data = tiers.get("tier3", {})
+            return {
+                "tier": "tier3",
+                "score": score,
+                "actions": tier_data.get("actions", []),
+                "duration": tier_data.get("duration", ""),
+                "reason": f"Score {score:.2f} below critical threshold {critical}",
+            }
+        if score < warning:
+            tier_data = tiers.get("tier2", {})
+            return {
+                "tier": "tier2",
+                "score": score,
+                "actions": tier_data.get("actions", []),
+                "duration": tier_data.get("duration", ""),
+                "reason": f"Score {score:.2f} below warning threshold {warning}",
+            }
+
+        return {"tier": "none", "score": score, "reason": "Performance within acceptable range"}
 
     def _on_idle_triggered(self) -> None:
         """Callback fired when idle state is detected."""

@@ -70,7 +70,9 @@ class TestOrchestratorInit:
             agent_id="test-agent",
         )
         assert orch.agent_id == "test-agent"
-        assert len(orch.performance.agents) == 1
+        # At least the current agent is registered (config may add more)
+        assert len(orch.performance.agents) >= 1
+        assert "test-agent" in orch._agent_ids
 
     def test_default_agent_id(self, tmp_path):
         orch = SelfOptimizationOrchestrator(
