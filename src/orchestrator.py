@@ -103,9 +103,7 @@ class SelfOptimizationOrchestrator:
             config_agents = [agent_id] + config_agents
 
         for name in config_agents:
-            internal_id = self.performance.register_agent(
-                {"name": name, "type": "autonomous"}
-            )
+            internal_id = self.performance.register_agent({"name": name, "type": "autonomous"})
             self._agent_ids[name] = internal_id
 
         self._agent_internal_id = self._agent_ids[agent_id]
@@ -197,7 +195,6 @@ class SelfOptimizationOrchestrator:
                 productive_count += 1
 
         # 3. Update performance metrics
-        # Adaptability: derived from activity type diversity (more types = more adaptable)
         activity_types = {a.get("type", "unknown") for a in activities}
         adaptability = min(1.0, len(activity_types) / 5.0) if activities else 0.0
 
@@ -207,11 +204,15 @@ class SelfOptimizationOrchestrator:
             "adaptability": adaptability,
         }
         self.performance.update_agent_performance(self._agent_internal_id, perf_data)
+        review["perf_data"] = perf_data
 
-        # 4. Generate performance report
+        # 4. Seed capability_map from real activities so gap analysis reflects reality
+        self._seed_capabilities_from_activities(activities)
+
+        # 5. Generate performance report
         review["performance_report"] = self.performance.generate_performance_report()
 
-        # 5. Verify report quality via SMARC
+        # 6. Verify report quality via SMARC
         verification_input = {
             "total_activities": len(activities),
             "productive_activities": productive_count,
@@ -223,23 +224,26 @@ class SelfOptimizationOrchestrator:
         }
         review["verification"] = self.verification.verify_results(verification_input)
 
-        # 6. Identify capability gaps
+        # 7. Identify capability gaps (now meaningful since capabilities are seeded)
         review["capability_gaps"] = self.improvement._identify_capability_gaps()
 
-        # 6b. Assess intervention tier from config thresholds
+        # 7b. Assess intervention tier from config thresholds
         review["intervention"] = self.get_intervention_tier()
 
-        # 7. Generate and execute top improvement proposal
+        # 7c. Load previous day's performance for trend comparison
+        review["previous_perf"] = self._load_previous_performance()
+
+        # 8. Generate and execute top improvement proposal
         proposals = self.improvement.generate_improvement_proposals()
         if proposals:
             self.improvement.execute_improvement(proposals[0])
             review["improvement_executed"] = proposals[0]
 
-        # 8. Write daily reflection
+        # 9. Write daily reflection
         reflection_path = self._write_reflection(today, review, activities)
         review["reflection_path"] = reflection_path
 
-        # 9. Persist state
+        # 10. Persist state
         self._persist_state()
         self.state.save("last_run", {"type": "daily_review", "timestamp": now})
 
@@ -354,101 +358,361 @@ class SelfOptimizationOrchestrator:
         """Callback fired when idle state is detected."""
         logger.warning("Idle state triggered for agent %s", self.agent_id)
 
+    def _seed_capabilities_from_activities(self, activities: List[Dict[str, Any]]) -> None:
+        """Seed capability_map from real activity data so gap analysis is meaningful.
+
+        Maps activity types to capabilities:
+        - git_commit, file_modification → task_execution
+        - daily_reflection → self_monitoring
+        - Multiple activity types → learning, problem_solving
+        - Commits with messages containing 'fix', 'refactor' → problem_solving
+        """
+        cap_map = self.improvement.capability_map
+        now_iso = datetime.now().isoformat()
+
+        # Count activities by type
+        type_counts: Dict[str, int] = {}
+        commit_subjects: List[str] = []
+        for a in activities:
+            atype = a.get("type", "unknown")
+            type_counts[atype] = type_counts.get(atype, 0) + 1
+            if atype == "git_commit":
+                commit_subjects.append(a.get("description", "").lower())
+
+        total = max(1, len(activities))
+
+        # task_execution: based on commits + file modifications
+        task_count = type_counts.get("git_commit", 0) + type_counts.get("file_modification", 0)
+        if task_count > 0:
+            prof = min(1.0, task_count / total)
+            if (
+                "task_execution" not in cap_map
+                or cap_map["task_execution"].get("proficiency", 0) < prof
+            ):
+                cap_map["task_execution"] = {
+                    "added_timestamp": now_iso,
+                    "proficiency": prof,
+                    "source": "activity_scan",
+                    "evidence": f"{task_count} task activities out of {total}",
+                }
+
+        # self_monitoring: based on reflections + reviews
+        monitor_count = type_counts.get("daily_reflection", 0)
+        if monitor_count > 0:
+            prof = min(1.0, 0.3 + monitor_count * 0.2)
+            if (
+                "self_monitoring" not in cap_map
+                or cap_map["self_monitoring"].get("proficiency", 0) < prof
+            ):
+                cap_map["self_monitoring"] = {
+                    "added_timestamp": now_iso,
+                    "proficiency": prof,
+                    "source": "activity_scan",
+                    "evidence": f"{monitor_count} reflections found",
+                }
+
+        # problem_solving: based on fix/refactor/debug commits
+        fix_count = sum(
+            1
+            for s in commit_subjects
+            if any(w in s for w in ("fix", "refactor", "debug", "resolve", "patch"))
+        )
+        if fix_count > 0:
+            prof = min(1.0, 0.2 + fix_count * 0.15)
+            if (
+                "problem_solving" not in cap_map
+                or cap_map["problem_solving"].get("proficiency", 0) < prof
+            ):
+                cap_map["problem_solving"] = {
+                    "added_timestamp": now_iso,
+                    "proficiency": prof,
+                    "source": "activity_scan",
+                    "evidence": f"{fix_count} fix/refactor commits",
+                }
+
+        # learning: based on diversity of activity types
+        activity_type_count = len(type_counts)
+        if activity_type_count >= 2:
+            prof = min(1.0, activity_type_count / 5.0)
+            if "learning" not in cap_map or cap_map["learning"].get("proficiency", 0) < prof:
+                cap_map["learning"] = {
+                    "added_timestamp": now_iso,
+                    "proficiency": prof,
+                    "source": "activity_scan",
+                    "evidence": f"{activity_type_count} distinct activity types",
+                }
+
+        # communication: based on commit message quality (non-trivial messages)
+        meaningful_msgs = sum(1 for s in commit_subjects if len(s) > 10)
+        if meaningful_msgs > 0:
+            prof = min(1.0, meaningful_msgs / max(1, len(commit_subjects)))
+            if (
+                "communication" not in cap_map
+                or cap_map["communication"].get("proficiency", 0) < prof
+            ):
+                cap_map["communication"] = {
+                    "added_timestamp": now_iso,
+                    "proficiency": prof,
+                    "source": "activity_scan",
+                    "evidence": (
+                        f"{meaningful_msgs}/{len(commit_subjects)}"
+                        " commits with descriptive messages"
+                    ),
+                }
+
+    def _load_previous_performance(self) -> Dict[str, Any]:
+        """Load the most recent previous performance entry for trend comparison.
+
+        Returns dict with score and perf_data, or empty dict if none found.
+        """
+        history = self.performance.performance_history
+        # Find the most recent entry for this agent that isn't from the current run
+        # (the current run's entry was just appended, so look for the second-to-last)
+        agent_entries = [h for h in history if h.get("agent_id") == self._agent_internal_id]
+        if len(agent_entries) >= 2:
+            prev = agent_entries[-2]
+            return {
+                "score": prev.get("performance_score", 0.0),
+                "perf_data": prev.get("performance_data", {}),
+                "timestamp": prev.get("timestamp", ""),
+            }
+        return {}
+
     def _write_reflection(
         self,
         date: str,
         review: Dict[str, Any],
         activities: List[Dict[str, Any]],
     ) -> str:
-        """Write a daily reflection markdown file."""
+        """Write a detailed daily reflection markdown file with real data."""
         reflection_dir = os.path.join(self.workspace_dir, "memory", "daily-reflections")
         os.makedirs(reflection_dir, exist_ok=True)
         filepath = os.path.join(reflection_dir, f"{date}-reflection.md")
 
-        # Count activity types
+        # ── Analyze activities ──────────────────────────────────────────
         type_counts: Dict[str, int] = {}
+        commits_by_repo: Dict[str, List[str]] = {}
+        all_commits: List[str] = []
         for a in activities:
             atype = a.get("type", "unknown")
             type_counts[atype] = type_counts.get(atype, 0) + 1
+            if atype == "git_commit":
+                repo = os.path.basename(a.get("path", "unknown"))
+                msg = a.get("description", "")
+                commits_by_repo.setdefault(repo, []).append(msg)
+                all_commits.append(msg)
 
+        # ── Extract data from review ────────────────────────────────────
         perf_report = review.get("performance_report", {})
         avg_perf = perf_report.get("average_performance", 0.0)
+        intervention = review.get("intervention", {})
+        agent_score = intervention.get("score", avg_perf)
+        perf_data = review.get("perf_data", {})
+        accuracy = perf_data.get("accuracy", 0.0)
+        efficiency = perf_data.get("efficiency", 0.0)
+        adaptability = perf_data.get("adaptability", 0.0)
         gaps = review.get("capability_gaps", {})
+        previous = review.get("previous_perf", {})
 
-        # Try LLM-enhanced reflection
-        llm_narrative = ""
-        if self.llm.available:
-            context = (
-                f"Activities found: {len(activities)}\n"
-                f"Activity types: {type_counts}\n"
-                f"Average performance: {avg_perf:.2f}\n"
-                f"Capability gaps: {gaps}\n"
-            )
-            llm_narrative = self.llm.analyze(
-                "Write a brief, honest daily reflection for an AI agent. "
-                "Include achievements, challenges, and priorities for tomorrow. "
-                "Be concise (under 200 words).",
-                context=context,
-                max_tokens=512,
-            )
+        # ── Build markdown ──────────────────────────────────────────────
+        lines: List[str] = [f"# Daily Reflection - {date}", ""]
 
-        # Build markdown
-        lines = [
-            f"# Daily Reflection - {date}",
-            "",
-            "## Activity Summary",
-            f"- Total activities detected: {len(activities)}",
-        ]
+        # Activity Summary with git detail
+        lines.extend(["## Activity Summary", f"- **Total activities**: {len(activities)}"])
         for atype, count in sorted(type_counts.items()):
             lines.append(f"- {atype}: {count}")
+        if commits_by_repo:
+            lines.append("")
+            lines.append("### Git Activity")
+            for repo, msgs in sorted(commits_by_repo.items()):
+                lines.append(f"- **{repo}** ({len(msgs)} commits)")
+                for msg in msgs[:5]:  # top 5 per repo
+                    lines.append(f"  - {msg}")
+                if len(msgs) > 5:
+                    lines.append(f"  - ... and {len(msgs) - 5} more")
 
+        # Achievements from commit messages
+        if all_commits:
+            lines.extend(["", "## Achievements"])
+            for msg in all_commits[:10]:
+                lines.append(f"- {msg}")
+            if len(all_commits) > 10:
+                lines.append(f"- ... and {len(all_commits) - 10} more commits")
+
+        # Performance Breakdown
         lines.extend(
             [
                 "",
                 "## Performance",
-                f"- Average score: {avg_perf:.2f}",
-                f"- Quality threshold: {self.performance.quality_threshold}",
+                f"- **Agent score**: {agent_score:.2f}"
+                f" (threshold: {self.performance.quality_threshold})",
+                f"- **Average across all agents**: {avg_perf:.2f}",
+                f"- **Accuracy** (productive/total): {accuracy:.2f}",
+                f"- **Efficiency** (activity volume): {efficiency:.2f}",
+                f"- **Adaptability** (type diversity): {adaptability:.2f}",
             ]
         )
 
-        if gaps.get("missing_capabilities"):
+        # Trend vs previous day
+        if previous:
+            prev_score = previous.get("score", 0.0)
+            delta = avg_perf - prev_score
+            direction = "up" if delta > 0 else "down" if delta < 0 else "unchanged"
+            lines.append(
+                f"- **Trend**: {direction} {abs(delta):.2f} from previous ({prev_score:.2f})"
+            )
+            prev_data = previous.get("perf_data", {})
+            if prev_data:
+                changes: List[str] = []
+                for metric in ("accuracy", "efficiency", "adaptability"):
+                    old_val = prev_data.get(metric, 0.0)
+                    new_val = perf_data.get(metric, 0.0)
+                    diff = new_val - old_val
+                    if abs(diff) > 0.01:
+                        arrow = "+" if diff > 0 else ""
+                        changes.append(f"{metric}: {arrow}{diff:.2f}")
+                if changes:
+                    lines.append(f"- **Changes**: {', '.join(changes)}")
+
+        # Intervention tier
+        tier = intervention.get("tier", "none")
+        if tier != "none":
             lines.extend(
                 [
                     "",
-                    "## Capability Gaps",
+                    "## Intervention Status",
+                    f"- **Tier**: {tier}",
+                    f"- **Reason**: {intervention.get('reason', '')}",
                 ]
             )
-            for cap in gaps["missing_capabilities"]:
-                lines.append(f"- Missing: {cap}")
-        if gaps.get("low_performance_areas"):
-            for cap in gaps["low_performance_areas"]:
-                lines.append(f"- Low proficiency: {cap}")
+            tier_actions = intervention.get("actions", [])
+            if tier_actions:
+                lines.append("- **Required actions**:")
+                for action in tier_actions:
+                    lines.append(f"  - {action}")
+        else:
+            lines.extend(
+                [
+                    "",
+                    "## Intervention Status: NONE"
+                    f" (score {intervention.get('score', 0.0):.2f}"
+                    " within acceptable range)",
+                ]
+            )
 
+        # Challenges — identify weak areas from performance data
+        challenges: List[str] = []
+        if accuracy < 0.5:
+            unproductive = len(activities) - int(accuracy * len(activities))
+            challenges.append(
+                f"Low accuracy ({accuracy:.2f}): {unproductive} of {len(activities)} "
+                f"activities were non-productive"
+            )
+        if efficiency < 0.5:
+            challenges.append(
+                f"Low efficiency ({efficiency:.2f}): only {len(activities)} activities "
+                f"detected (target: 100+ for full score)"
+            )
+        if adaptability < 0.5:
+            challenges.append(
+                f"Low adaptability ({adaptability:.2f}): only {len(type_counts)} activity "
+                f"types (target: 5+ for full score)"
+            )
+        if agent_score < self.performance.quality_threshold:
+            challenges.append(
+                f"Agent score ({agent_score:.2f}) below quality threshold "
+                f"({self.performance.quality_threshold})"
+            )
+        # Add gaps as challenges
+        for cap in gaps.get("low_performance_areas", []):
+            challenges.append(f"Low proficiency in: {cap}")
+        if challenges:
+            lines.extend(["", "## Challenges"])
+            for c in challenges:
+                lines.append(f"- {c}")
+
+        # Capability Gaps (now meaningful since seeded from activities)
+        missing = gaps.get("missing_capabilities", [])
+        stale = gaps.get("potential_improvements", [])
+        if missing or stale:
+            lines.extend(["", "## Capability Gaps"])
+            for cap in missing:
+                lines.append(f"- **Missing**: {cap} — no evidence found in today's activities")
+            for cap in stale:
+                lines.append(f"- **Stale**: {cap}")
+
+        # Improvement executed
         if review.get("improvement_executed"):
+            imp = review["improvement_executed"]
             lines.extend(
                 [
                     "",
                     "## Improvement Executed",
-                    f"- Type: {review['improvement_executed'].get('type', 'unknown')}",
+                    f"- **Type**: {imp.get('type', 'unknown')}",
+                    f"- **Target**: {imp.get('target', 'N/A')}",
                 ]
             )
 
-        if llm_narrative:
-            lines.extend(
-                [
-                    "",
-                    "## AI Reflection",
-                    llm_narrative,
-                ]
+        # LLM-enhanced reflection (with richer context)
+        if self.llm.available:
+            commit_summary = "\n".join(f"- {m}" for m in all_commits[:15])
+            context = (
+                f"Date: {date}\n"
+                f"Total activities: {len(activities)}\n"
+                f"Activity types: {type_counts}\n"
+                f"Git commits by repo: { {r: len(m) for r, m in commits_by_repo.items()} }\n"
+                f"Top commit messages:\n{commit_summary}\n"
+                f"Performance: overall={avg_perf:.2f}, accuracy={accuracy:.2f}, "
+                f"efficiency={efficiency:.2f}, adaptability={adaptability:.2f}\n"
+                f"Quality threshold: {self.performance.quality_threshold}\n"
+                f"Intervention tier: {tier}\n"
+                f"Challenges: {challenges}\n"
+                f"Capability gaps (missing): {missing}\n"
             )
+            if previous:
+                context += f"Previous score: {previous.get('score', 0.0):.2f}\n"
+
+            llm_narrative = self.llm.analyze(
+                "Write a brief, honest daily reflection for an AI agent. "
+                "Reference specific commits and metrics. Identify what went well, "
+                "what needs improvement, and concrete priorities for tomorrow. "
+                "Be concise (under 200 words).",
+                context=context,
+                max_tokens=512,
+            )
+            if llm_narrative:
+                lines.extend(["", "## AI Reflection", llm_narrative])
+
+        # Data-derived priorities
+        priorities: List[str] = []
+        if challenges:
+            # Prioritize the biggest weakness
+            if accuracy < efficiency and accuracy < adaptability:
+                priorities.append("Increase productive output ratio (focus on meaningful commits)")
+            elif efficiency < adaptability:
+                priorities.append("Increase activity volume (more commits, more files touched)")
+            else:
+                priorities.append(
+                    "Diversify activity types (research, testing, docs, not just coding)"
+                )
+        if missing:
+            priorities.append(f"Build evidence for missing capabilities: {', '.join(missing)}")
+        if tier != "none":
+            tier_actions = intervention.get("actions", [])
+            if tier_actions:
+                priorities.append(f"Address intervention: {tier_actions[0]}")
+        if not priorities:
+            priorities.append("Maintain current trajectory — all metrics within acceptable range")
+        # Always add a forward-looking item
+        if len(priorities) < 3:
+            priorities.append("Review and iterate on self-optimization feedback loop")
+
+        lines.extend(["", "## Tomorrow's Priorities"])
+        for i, p in enumerate(priorities, 1):
+            lines.append(f"{i}. {p}")
 
         lines.extend(
             [
-                "",
-                "## Tomorrow's Priorities",
-                "1. Address capability gaps",
-                "2. Maintain productive output",
-                "3. Continue self-improvement cycle",
                 "",
                 f"---\n*Generated by self-optimization system at {review['timestamp']}*",
             ]
