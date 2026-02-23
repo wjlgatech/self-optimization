@@ -56,7 +56,8 @@ CHEAP_MODELS = {
 # Recommended defaults
 RECOMMENDED_BOOTSTRAP_MAX_CHARS = 8000
 RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS = 30000
-RECOMMENDED_COMPACTION_MODE = "aggressive"
+# OpenClaw valid compaction modes: "default" (compacts more eagerly) or "safeguard" (only near limit)
+RECOMMENDED_COMPACTION_MODE = "default"
 RECOMMENDED_HEARTBEAT_INTERVAL = "6h"
 
 # Default OpenClaw caps
@@ -251,7 +252,6 @@ class CostGovernor:
                     "savings_pct": 20,
                     "config_patch": {
                         "agents.defaults.bootstrapMaxChars": RECOMMENDED_BOOTSTRAP_MAX_CHARS,
-                        "agents.defaults.bootstrapTotalMaxChars": RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS,
                     },
                 })
 
@@ -282,28 +282,28 @@ class CostGovernor:
             "agents", "defaults", "compaction", "mode",
             default="safeguard",
         )
-        if compaction_mode != "aggressive":
+        if compaction_mode == "safeguard":
             findings.append({
                 "id": "weak_compaction",
                 "severity": "warning",
-                "title": f"Compaction mode is '{compaction_mode}' (not aggressive)",
+                "title": f"Compaction mode is '{compaction_mode}' (not default)",
                 "detail": (
-                    "Aggressive compaction summarizes earlier conversation "
-                    "at ~25-35% of context window, preventing token growth. "
-                    "'safeguard' only triggers near the limit."
+                    "'default' compaction summarizes earlier conversation "
+                    "more eagerly, preventing token growth. "
+                    "'safeguard' only triggers near the context limit."
                 ),
             })
             recommendations.append({
                 "id": "aggressive_compaction",
                 "impact": "medium",
-                "title": "Switch compaction to aggressive",
+                "title": "Switch compaction to default",
                 "detail": (
-                    "Set agents.defaults.compaction.mode to 'aggressive'. "
+                    "Set agents.defaults.compaction.mode to 'default'. "
                     "Compacts earlier, keeping tokens/turn stable over time."
                 ),
                 "savings_pct": 30,
                 "config_patch": {
-                    "agents.defaults.compaction.mode": "aggressive",
+                    "agents.defaults.compaction.mode": "default",
                 },
             })
 
@@ -407,12 +407,13 @@ class CostGovernor:
         log_path = os.path.expanduser("~/.openclaw/logs/gateway.log")
         if os.path.isfile(log_path):
             try:
-                with open(log_path, "r", encoding="utf-8") as f:
+                with open(log_path, "rb") as f:
                     # Read last 5KB — model line is near recent startup
                     f.seek(0, 2)
                     size = f.tell()
                     f.seek(max(0, size - 5000))
-                    tail = f.read()
+                    raw = f.read()
+                tail = raw.decode("utf-8", errors="replace")
                 for line in reversed(tail.splitlines()):
                     if "agent model:" in line:
                         # e.g. "[gateway] agent model: anthropic/claude-opus-4-6"
@@ -443,9 +444,8 @@ class CostGovernor:
                 "agents": {
                     "defaults": {
                         "model": {"primary": "ollama/llama3.3"},
-                        "compaction": {"mode": "aggressive"},
+                        "compaction": {"mode": "default"},
                         "bootstrapMaxChars": 6000,
-                        "bootstrapTotalMaxChars": 20000,
                         "heartbeat": {
                             "model": "ollama/llama3.3",
                             "every": "6h",
@@ -455,8 +455,8 @@ class CostGovernor:
             }
             explanations = [
                 "Primary model → ollama/llama3.3 (free, runs locally)",
-                "Compaction → aggressive (compact at ~25% context window)",
-                "Bootstrap caps → 6K/20K chars (strict token diet)",
+                "Compaction → default (compacts earlier than safeguard)",
+                "Bootstrap cap → 6K chars per file (strict token diet)",
                 "Heartbeat → local model, every 6 hours",
             ]
 
@@ -465,9 +465,8 @@ class CostGovernor:
                 "agents": {
                     "defaults": {
                         "model": {"primary": "claude-haiku-4-5"},
-                        "compaction": {"mode": "aggressive"},
+                        "compaction": {"mode": "default"},
                         "bootstrapMaxChars": RECOMMENDED_BOOTSTRAP_MAX_CHARS,
-                        "bootstrapTotalMaxChars": RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS,
                         "heartbeat": {
                             "model": "claude-haiku-4-5",
                             "every": "4h",
@@ -477,9 +476,8 @@ class CostGovernor:
             }
             explanations = [
                 "Primary model → claude-haiku-4-5 ($0.80/M — 19x cheaper than Opus)",
-                "Compaction → aggressive (compact at ~25% context window)",
-                f"Bootstrap caps → {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,}/"
-                f"{RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:,} chars",
+                "Compaction → default (compacts earlier than safeguard)",
+                f"Bootstrap cap → {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,} chars per file",
                 "Heartbeat → Haiku, every 4 hours",
             ]
 
@@ -487,9 +485,8 @@ class CostGovernor:
             patch = {
                 "agents": {
                     "defaults": {
-                        "compaction": {"mode": "aggressive"},
+                        "compaction": {"mode": "default"},
                         "bootstrapMaxChars": RECOMMENDED_BOOTSTRAP_MAX_CHARS,
-                        "bootstrapTotalMaxChars": RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS,
                     }
                 }
             }
@@ -503,9 +500,8 @@ class CostGovernor:
                     "Heartbeat model → Haiku (stops burning Opus tokens on inbox checks)"
                 )
             explanations.extend([
-                "Compaction → aggressive (compact at ~25% context window)",
-                f"Bootstrap caps → {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,}/"
-                f"{RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:,} chars",
+                "Compaction → default (compacts earlier than safeguard)",
+                f"Bootstrap cap → {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,} chars per file",
                 "Primary model unchanged — only trimming waste",
             ])
 
@@ -641,8 +637,8 @@ class CostGovernor:
         compaction = self._get_nested(
             "agents", "defaults", "compaction", "mode", default="safeguard"
         )
-        if compaction != "aggressive":
-            alerts.append(f"Compaction mode '{compaction}' — should be 'aggressive'")
+        if compaction == "safeguard":
+            alerts.append(f"Compaction mode '{compaction}' — should be 'default'")
 
         # Build result
         result: Dict[str, Any] = {

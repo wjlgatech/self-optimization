@@ -200,9 +200,8 @@ class TestAudit:
         """Cheap model should not trigger expensive_model finding."""
         config = tmp_env["config"]
         config["agents"]["defaults"]["model"] = {"primary": "ollama/llama3.3"}
-        config["agents"]["defaults"]["compaction"] = {"mode": "aggressive"}
+        config["agents"]["defaults"]["compaction"] = {"mode": "default"}
         config["agents"]["defaults"]["bootstrapMaxChars"] = 6000
-        config["agents"]["defaults"]["bootstrapTotalMaxChars"] = 20000
         with open(tmp_env["config_path"], "w") as f:
             json.dump(config, f)
 
@@ -260,7 +259,7 @@ class TestConfigOptimization:
     def test_conservative_still_fixes_compaction(self, governor):
         result = governor.generate_optimized_config(strategy="conservative")
         compaction = result["patch"]["agents"]["defaults"]["compaction"]["mode"]
-        assert compaction == "aggressive"
+        assert compaction == "default"
 
     def test_all_strategies_have_explanations(self, governor):
         for strategy in ["aggressive", "balanced", "conservative"]:
@@ -273,21 +272,21 @@ class TestConfigOptimization:
 
 class TestConfigApplication:
     def test_apply_creates_backup(self, governor, tmp_env):
-        patch = {"agents": {"defaults": {"compaction": {"mode": "aggressive"}}}}
+        patch = {"agents": {"defaults": {"compaction": {"mode": "default"}}}}
         result = governor.apply_config(patch, backup=True)
         assert result["success"]
         assert result["backup_path"] is not None
         assert os.path.isfile(result["backup_path"])
 
     def test_apply_merges_correctly(self, governor, tmp_env):
-        patch = {"agents": {"defaults": {"compaction": {"mode": "aggressive"}}}}
+        patch = {"agents": {"defaults": {"compaction": {"mode": "default"}}}}
         result = governor.apply_config(patch)
         assert result["success"]
 
         # Reload and verify
         with open(tmp_env["config_path"]) as f:
             updated = json.load(f)
-        assert updated["agents"]["defaults"]["compaction"]["mode"] == "aggressive"
+        assert updated["agents"]["defaults"]["compaction"]["mode"] == "default"
         # Original keys should still be there
         assert updated["agents"]["defaults"]["maxConcurrent"] == 4
 
@@ -296,7 +295,7 @@ class TestConfigApplication:
             "agents": {
                 "defaults": {
                     "model": {"primary": "claude-haiku-4-5"},
-                    "compaction": {"mode": "aggressive"},
+                    "compaction": {"mode": "default"},
                 }
             }
         }
@@ -305,7 +304,7 @@ class TestConfigApplication:
         assert "agents.defaults.compaction.mode" in result["keys_changed"]
 
     def test_apply_without_backup(self, governor, tmp_env):
-        patch = {"agents": {"defaults": {"compaction": {"mode": "aggressive"}}}}
+        patch = {"agents": {"defaults": {"compaction": {"mode": "default"}}}}
         result = governor.apply_config(patch, backup=False)
         assert result["success"]
         assert result["backup_path"] is None
