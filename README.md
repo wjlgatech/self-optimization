@@ -2,28 +2,194 @@
 
 **Your AI agents forget to work. This system catches them.**
 
-A zero-dependency Python framework that monitors AI agent activity through real filesystem signals — git commits, file modifications, workspace changes — and automatically intervenes when productivity drops. No cloud dashboards. No manual check-ins. Just a cron job that watches the work and tells you the truth.
+**Your AI bills are 19x higher than they need to be. This system fixes that.**
 
-Built for [OpenClaw](https://docs.openclaw.ai) multi-agent setups. Runs on your machine, on your schedule.
+**Your gateway crashes at 3 AM. This system restarts it before anyone notices.**
+
+A zero-dependency Python framework that makes AI agent operations reliable and affordable. Built for [OpenClaw](https://docs.openclaw.ai). Runs on your machine, on your schedule.
+
+```bash
+pip install -e ".[dev]" && make install-watchdog && make cost-audit
+```
 
 ---
 
-## Why This Exists
+## 1. Gateway Watchdog: Sleep Through Outages
 
-| Problem | What happens without this | What happens with this |
-|---------|--------------------------|----------------------|
-| **Agent goes idle for hours** | You don't notice until end of day | Detected in 2 hours, intervention triggered automatically |
-| **Gateway crashes at 3 AM** | Telegram/Discord/Slack go dark until you wake up | Auto-restarted in under 5 minutes, zero downtime |
-| **"Was today productive?"** | You guess, or spend 30 min reviewing logs | Data-driven daily reflection written to markdown, every night at 11 PM |
-| **Running multiple agents** | No idea which one is underperforming | Per-agent performance tracking with escalation tiers |
-| **Performance slowly degrades** | You notice weeks later | Threshold-based alerts: warning at 70%, critical at 50% |
+**The problem you're solving:** Your AI gateway crashes at 3 AM on a Saturday. Your Telegram bot, Discord channels, and Slack integrations all go dark. You wake up Sunday to 47 undelivered messages and an angry group chat.
+
+**With this:** The watchdog detects the crash in under 5 minutes, restarts the gateway automatically, and your users never notice. You slept through the whole thing.
+
+```bash
+make install-watchdog      # one command, handles everything
+make watchdog-status       # see what's happening
+make uninstall-watchdog    # clean removal
+```
 
 <details>
-<summary><b>Real-world scenario: weekend gateway recovery</b></summary>
+<summary><b>Technical innovation: sandbox-aware cron deployment</b></summary>
 
-Saturday 2 AM. Your OpenClaw gateway OOMs and crashes. The watchdog's cron job fires at 2:05 AM, detects the TCP port is dead, runs `launchctl kickstart -k`, and the gateway is back by 2:06 AM. Your Telegram bot never missed a message. You slept through the whole thing.
+macOS cron can't read `~/Documents/` or access Python virtualenvs due to TCC sandboxing. The installer solves this by deploying to `~/.openclaw/scripts/` with system Python, auto-detecting the gateway port from config and Node.js path from the LaunchAgent plist. One command replaces 5 manual steps.
 
-Without the watchdog: you wake up Sunday to 47 undelivered messages and an angry group chat.
+</details>
+
+<details>
+<summary><b>Implementation: TCP probe + launchctl restart pipeline</b></summary>
+
+Every 5 minutes via system crontab:
+
+1. TCP socket probe to `127.0.0.1:{port}` (faster than HTTP health checks)
+2. If down: `launchctl kickstart -k` (atomic kill + restart)
+3. If kickstart fails: `bootout` + `bootstrap` (full service reload)
+4. 3 retry attempts with 10s delays and post-restart verification
+5. JSON results logged to `/tmp/openclaw-watchdog.log`
+
+Idempotent cron management via marker comments. Safe to run `make install-watchdog` repeatedly.
+
+</details>
+
+---
+
+## 2. Cost Governor: Cut Your AI Bill by 94.7%
+
+**The problem you're solving:** You're running Claude Opus at $15/M input tokens for every turn — including heartbeat inbox checks, simple Q&A, and routine tasks. Your monthly bill is 19x higher than it needs to be.
+
+**With this:** One command audits your config, identifies waste, and applies optimized settings. Real result from our production setup:
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Model cost | $15.00/M tokens | $0.80/M tokens | **-94.7%** |
+| Compaction | safeguard (lazy) | default (eager) | Stops token growth |
+| Heartbeat | Opus ($15/M) | Haiku ($0.80/M) | Trivial work, trivial cost |
+| Bootstrap cap | 150K chars | 8K chars/file | 19x tighter |
+
+```bash
+make cost-audit     # find waste
+make cost-status    # track savings vs baseline
+make cost-govern    # periodic governance cycle
+```
+
+<details>
+<summary><b>Technical innovation: non-additive savings estimation</b></summary>
+
+Multiple optimizations don't add linearly — two 50% savings compound to 75%, not 100%. The governor uses `1 - product(1 - r_i)` to calculate compound savings honestly, capped at 95%. Each recommendation shows individual impact plus the realistic combined total. No overpromising.
+
+</details>
+
+<details>
+<summary><b>Implementation: config audit + patch + baseline tracking</b></summary>
+
+The governor reads `~/.openclaw/openclaw.json` and detects:
+
+- **Expensive default model**: Flags Opus/GPT-4o, recommends Haiku/mini/local
+- **Heartbeat waste**: Detects heartbeat inheriting expensive model for trivial inbox checks
+- **Bootstrap bloat**: Measures all auto-injected files (AGENTS.md, SOUL.md, etc.), flags oversized caps
+- **Weak compaction**: Detects `safeguard` mode, recommends `default` for earlier compaction
+
+Three strategies: `aggressive` (local Ollama, free), `balanced` (Haiku, 19x cheaper), `conservative` (keep model, trim waste). Applies via deep-merge with automatic backup.
+
+```bash
+# Preview
+.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run
+# Apply (creates ~/.openclaw/openclaw.json.pre-governor.bak)
+.venv/bin/python src/__main__.py cost-apply --strategy balanced
+# Track over time
+.venv/bin/python src/__main__.py cost-baseline && .venv/bin/python src/__main__.py cost-status
+```
+
+</details>
+
+---
+
+## 3. Idle Detection: Know When Agents Stop Working
+
+**The problem you're solving:** Your AI agent has been "running" for 6 hours but produced nothing. No commits, no file changes, no output. You don't find out until end of day when you check manually.
+
+**With this:** Every 2 hours, the system scans real filesystem activity — git commits, file modifications, workspace changes. Zero output = idle alert with automatic intervention.
+
+```bash
+.venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
+```
+
+<details>
+<summary><b>Technical innovation: filesystem-based activity detection</b></summary>
+
+Instead of polling AI provider APIs or scraping dashboards, the system measures work output directly. Git commits = code was produced. File modifications = work is happening. This is provider-agnostic, privacy-preserving, tamper-evident (git signatures), and works offline. No false positives from editor autosave — it looks for meaningful work artifacts.
+
+</details>
+
+<details>
+<summary><b>Implementation: workspace scanner + intervention tiers</b></summary>
+
+The filesystem scanner examines `~/.openclaw/workspace/`:
+
+- `git log` across all subdirectories with `.git`
+- `mtime` checks across the workspace tree
+- Markdown parsing in `memory/daily-reflections/`
+
+Idle = zero commits AND zero file modifications within the time window (default: 2 hours). Configurable thresholds and multi-tier escalation (warning at 70%, critical at 50%).
+
+</details>
+
+---
+
+## 4. Daily Reviews: Automated Performance Reflections
+
+**The problem you're solving:** "Was today productive?" You either guess, or spend 30 minutes reviewing logs and commits manually. Every day.
+
+**With this:** At 11 PM every night, the system scans the day's work, calculates performance metrics, and writes a data-driven reflection to markdown. When you arrive next morning, the summary is already there.
+
+```bash
+.venv/bin/python src/__main__.py --agent-id loopy-0 daily-review
+```
+
+<details>
+<summary><b>Technical innovation: LLM-optional analysis</b></summary>
+
+Set `ANTHROPIC_API_KEY` to get AI-generated narrative sections via Claude Haiku (stdlib `urllib.request`, no dependencies). Without the key, everything still works using rule-based analysis. The system never depends on an API to function.
+
+</details>
+
+<details>
+<summary><b>Implementation: scan + score + write pipeline</b></summary>
+
+1. Scan all git repos for the day's commits
+2. Count file modifications across the workspace
+3. Calculate performance metrics (goal completion, task efficiency)
+4. Write reflection to `~/.openclaw/workspace/memory/daily-reflections/YYYY-MM-DD-reflection.md`
+5. Persist state for trend analysis
+
+</details>
+
+---
+
+## 5. Multi-Agent Performance Tracking: Find the Weak Link
+
+**The problem you're solving:** You're running multiple AI agents in parallel. One is underperforming, but you can't tell which one or how badly without manual investigation.
+
+**With this:** Per-agent performance tracking with automatic escalation. Score drops below 70%? Performance review. Below 50%? Targeted coaching. Sustained low? Full rehabilitation program.
+
+```bash
+.venv/bin/python src/__main__.py intervention --agent loopy-0
+```
+
+<details>
+<summary><b>Technical innovation: weighted multi-signal scoring</b></summary>
+
+Performance score = accuracy (40%) + efficiency (35%) + adaptability (25%). Uses first-half vs second-half comparison for trend detection (>5% = improving, <-5% = declining). Agent names normalized automatically (`loopy` -> `loopy-0`, `loopy1` -> `loopy-1`).
+
+</details>
+
+<details>
+<summary><b>Implementation: config-driven escalation tiers</b></summary>
+
+| Tier | Trigger | Duration | Actions |
+|------|---------|----------|---------|
+| Tier 1 | Score < 70% | 2 weeks | Performance review, skill assessment |
+| Tier 2 | Score < 50% | 1 month | Targeted coaching, personalized learning plan |
+| Tier 3 | Sustained low | 3 months | Comprehensive rehabilitation program |
+
+Thresholds configured in `config.yaml`. Falls back to sensible defaults if config is missing.
 
 </details>
 
@@ -32,424 +198,47 @@ Without the watchdog: you wake up Sunday to 47 undelivered messages and an angry
 ## Quickstart
 
 ```bash
-# Install the framework
 cd ~/.openclaw/workspace/self-optimization
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Deploy the gateway watchdog (1 command, handles everything)
-make install-watchdog
-
-# Check system status
-.venv/bin/python src/__main__.py status
+make install-watchdog    # gateway auto-recovery
+make cost-audit          # find cost waste
 ```
-
-That's it. The watchdog is now monitoring your gateway every 5 minutes, and you can schedule idle checks and daily reviews via cron.
-
----
-
-## What It Does
-
-### Gateway Watchdog — never lose uptime again
-
-```bash
-make install-watchdog     # deploy + schedule (1 command)
-make watchdog-status      # see what's happening
-make uninstall-watchdog   # clean removal
-```
-
-<details>
-<summary><b>How the watchdog keeps your gateway alive</b></summary>
-
-The watchdog runs every 5 minutes via system crontab. Each cycle:
-
-1. **TCP probe** to `127.0.0.1:{port}` — faster and more reliable than HTTP health checks
-2. If the port is down, **restart via `launchctl kickstart -k`** (kills + restarts in one atomic operation)
-3. If kickstart fails, **fallback to `bootout` + `bootstrap`** (full service reload)
-4. **3 retry attempts** with 10-second delays and post-restart health verification
-5. Results logged to `/tmp/openclaw-watchdog.log` with full JSON history
-
-The installer auto-detects your gateway port from `~/.openclaw/openclaw.json` and your Node.js path from the LaunchAgent plist. Scripts are deployed to `~/.openclaw/scripts/` using system Python — avoiding the macOS sandbox restrictions that block cron from reading `~/Documents/` or venv paths.
-
-</details>
-
-### Idle Detection — know when agents stop working
-
-```bash
-.venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
-```
-
-<details>
-<summary><b>How idle detection works under the hood</b></summary>
-
-The filesystem scanner examines real activity across `~/.openclaw/workspace/`:
-
-- **Git commits**: `git log` across the workspace root and all subdirectories with `.git`
-- **File modifications**: Walks the workspace tree, checks `mtime` against the time window
-- **Daily reflections**: Parses markdown files in `memory/daily-reflections/`
-
-**Idle** = zero commits AND zero file modifications within the window (default: 2 hours).
-
-When idle is detected, the system triggers configurable intervention tiers based on severity and duration. No false positives from editor autosave — it looks for meaningful work artifacts.
-
-</details>
-
-### Daily Reviews — automated performance reflections
-
-```bash
-.venv/bin/python src/__main__.py --agent-id loopy-0 daily-review
-```
-
-<details>
-<summary><b>What goes into a daily review</b></summary>
-
-Every night at 11 PM (via cron), the system:
-
-1. Scans all git repos for the day's commits
-2. Counts file modifications across the workspace
-3. Calculates performance metrics (goal completion, task efficiency)
-4. Writes a data-driven reflection to `~/.openclaw/workspace/memory/daily-reflections/YYYY-MM-DD-reflection.md`
-5. Persists state for trend analysis
-
-Optional: set `ANTHROPIC_API_KEY` to add an AI-generated narrative section (Claude Haiku via stdlib `urllib` — no extra dependencies).
-
-</details>
-
-### Multi-Agent Performance Tracking
-
-```bash
-.venv/bin/python src/__main__.py intervention --agent loopy-0
-```
-
-<details>
-<summary><b>How multi-agent tracking and escalation work</b></summary>
-
-Agents are defined in `~/.openclaw/workspace/performance-system/monitoring/config.yaml`:
-
-| Agent | Role |
-|-------|------|
-| `loopy-0` | Primary agent (normalized from `loopy`) |
-| `loopy-1` | Parallel tasks (normalized from `loopy1`) |
-
-**Escalation tiers** based on performance score:
-
-| Tier | Trigger | Duration | Actions |
-|------|---------|----------|---------|
-| **Tier 1** | Score < 70% | 2 weeks | Performance review, skill assessment |
-| **Tier 2** | Score < 50% | 1 month | Targeted coaching, personalized learning plan |
-| **Tier 3** | Sustained low | 3 months | Comprehensive rehabilitation program |
-
-Performance score = weighted combination: accuracy (40%) + efficiency (35%) + adaptability (25%).
-
-</details>
-
-### Cost Governor — stop burning money on tokens
-
-```bash
-make cost-audit     # find cost waste in your config
-make cost-status    # show savings vs baseline
-make cost-govern    # full governance cycle
-```
-
-<details>
-<summary><b>How the Cost Governor cuts spend by 90%+</b></summary>
-
-The governor attacks the two real cost drivers: **$/token** and **tokens/turn**.
-
-**A) Make most tokens cheap (biggest lever)**
-
-It detects if your default model is in the expensive tier (Opus at $15/M input) and recommends routing 80-95% of turns to cheap alternatives:
-
-| Strategy | Default model | Estimated savings |
-|----------|--------------|-------------------|
-| `aggressive` | ollama/llama3.3 (free) | 95%+ |
-| `balanced` | claude-haiku-4-5 ($0.80/M) | 90%+ |
-| `conservative` | keep current, trim waste | 30-50% |
-
-```bash
-# Preview what would change
-.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run
-
-# Apply it (creates backup first)
-.venv/bin/python src/__main__.py cost-apply --strategy balanced
-```
-
-**B) Make every turn smaller**
-
-The governor measures all auto-injected bootstrap files (AGENTS.md, SOUL.md, TOOLS.md, etc.) and flags bloat. It also detects:
-
-- Weak compaction mode (`safeguard` vs `aggressive`)
-- Heartbeats burning expensive model tokens on trivial inbox checks
-- Bootstrap caps set too high (default 150K chars — recommended 30K)
-
-**C) Track over time**
-
-Record a baseline before optimizing, then monitor drift:
-
-```bash
-.venv/bin/python src/__main__.py cost-baseline   # snapshot "before"
-# ... make changes ...
-.venv/bin/python src/__main__.py cost-status     # see savings vs baseline
-```
-
-The governor stores history (last 50 runs) and alerts when costs drift back up.
-
-</details>
-
----
-
-## Technical Innovation
-
-<details>
-<summary><b>Zero-dependency architecture</b></summary>
-
-The entire system runs on Python stdlib only. No `requests`, no `pyyaml`, no `psutil`.
-
-- **HTTP calls**: `urllib.request` (for optional LLM integration)
-- **YAML parsing**: Custom regex parser in `config_loader.py` (no PyYAML)
-- **Health checks**: Raw TCP sockets (faster and more reliable than HTTP in launchd contexts)
-- **Process management**: Direct `launchctl` subprocess calls
-- **State persistence**: JSON files with atomic write (tmp + `os.replace`)
-
-Why: cron jobs and launchd agents need to start fast and work without virtualenv activation. Every external dependency is a potential failure point at 3 AM.
-
-</details>
-
-<details>
-<summary><b>macOS sandbox-aware deployment</b></summary>
-
-macOS cron cannot read files in `~/Documents/` or access Python virtualenvs due to sandboxing (TCC). The installer solves this by:
-
-1. Copying scripts to `~/.openclaw/scripts/` (accessible to cron)
-2. Using system Python (`/usr/local/bin/python3`) instead of venv Python
-3. Generating a standalone runner script (no imports from the project tree)
-4. Setting explicit `PATH` in the crontab entry with auto-detected Node.js path
-
-One `make install-watchdog` handles all of this.
-
-</details>
-
-<details>
-<summary><b>Filesystem-based activity detection (no API polling)</b></summary>
-
-Instead of polling AI provider APIs or scraping dashboards, the system measures work output directly:
-
-- Git commits = code was produced
-- File modifications = work is happening
-- Reflection files = reviews were written
-
-This approach is:
-- **Provider-agnostic**: Works with any AI agent, any LLM provider
-- **Privacy-preserving**: Never sends activity data anywhere
-- **Tamper-evident**: Git commits are cryptographically signed work artifacts
-- **Offline-capable**: No network dependency for core monitoring
-
-</details>
-
-<details>
-<summary><b>Idempotent cron management</b></summary>
-
-The installer uses marker comments (`# openclaw-gateway-watchdog`) in crontab entries. Running `make install-watchdog` multiple times is safe — it removes old entries before adding the new one. Uninstall cleanly removes only the watchdog entry, preserving all other cron jobs.
-
-</details>
-
-<details>
-<summary><b>Non-additive savings estimation</b></summary>
-
-The Cost Governor calculates combined savings using `1 - product(1 - r_i)` instead of naive addition. Two 50% savings compound to 75% (not 100%). This prevents overpromising and caps at 95% max. Each recommendation includes its individual impact estimate plus the compound total.
-
-</details>
-
----
 
 ## Scheduling
 
-| Job | Schedule | Command |
-|-----|----------|---------|
-| Gateway watchdog | Every 5 min | `make install-watchdog` (system crontab) |
-| Idle check (loopy-0) | Every 2 hours | via `~/.openclaw/cron/jobs.json` |
-| Idle check (loopy-1) | Every 2 hours (+15 min offset) | via `~/.openclaw/cron/jobs.json` |
-| Daily review | 11 PM daily | via `~/.openclaw/cron/jobs.json` |
+| Job | Schedule | Setup |
+|-----|----------|-------|
+| Gateway watchdog | Every 5 min | `make install-watchdog` |
+| Idle check | Every 2 hours | `~/.openclaw/cron/jobs.json` |
+| Daily review | 11 PM daily | `~/.openclaw/cron/jobs.json` |
+| Cost governance | On demand | `make cost-govern` |
 
-<details>
-<summary><b>Daemon mode (alternative to cron)</b></summary>
-
-```bash
-.venv/bin/python src/__main__.py run-daemon --interval 7200 --review-hour 23
-```
-
-Runs idle checks every 2 hours and the daily review at 11 PM. Stop with Ctrl+C.
-
-</details>
-
-<details>
-<summary><b>Verifying cron is working</b></summary>
-
-```bash
-# Check the watchdog
-make watchdog-status
-crontab -l | grep watchdog
-
-# Check idle/review jobs
-cat ~/.openclaw/workspace/self-optimization/state/last_run.json
-ls -la ~/.openclaw/workspace/memory/daily-reflections/
-```
-
-</details>
-
----
-
-## Full Technical Reference
-
-<details>
-<summary><b>All CLI commands</b></summary>
-
-```bash
-# Status
-.venv/bin/python src/__main__.py status
-
-# Idle check (scans last 2 hours)
-.venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
-
-# Daily review (scans last 24 hours, writes reflection)
-.venv/bin/python src/__main__.py --agent-id loopy-0 daily-review
-
-# Check intervention tier
-.venv/bin/python src/__main__.py intervention --agent loopy-0
-
-# Gateway watchdog (manual run)
-.venv/bin/python src/__main__.py gateway-watchdog
-.venv/bin/python src/__main__.py gateway-watchdog --port 31415
-
-# Daemon mode
-.venv/bin/python src/__main__.py run-daemon --interval 7200 --review-hour 23
-
-# Cost governor
-.venv/bin/python src/__main__.py cost-audit                          # audit config
-.venv/bin/python src/__main__.py cost-apply --strategy balanced      # apply optimizations
-.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run  # preview only
-.venv/bin/python src/__main__.py cost-baseline                       # record baseline
-.venv/bin/python src/__main__.py cost-status                         # savings vs baseline
-.venv/bin/python src/__main__.py cost-govern                         # full governor cycle
-```
-
-</details>
-
-<details>
-<summary><b>Architecture</b></summary>
+## Architecture
 
 ```
 src/
-├── anti_idling_system.py          # Idle state detection & intervention
-├── results_verification.py        # Result quality verification (SMARC criteria)
-├── multi_agent_performance.py     # Multi-agent performance tracking
+├── cost_governor.py               # Token/cost optimization
+├── gateway_watchdog.py            # Gateway health monitor
+├── anti_idling_system.py          # Idle detection
+├── filesystem_scanner.py          # Real activity detection
+├── multi_agent_performance.py     # Performance tracking
 ├── recursive_self_improvement.py  # Self-improvement protocol
-├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
-├── gateway_watchdog.py            # OpenClaw gateway health monitor & auto-restart
-├── cost_governor.py               # Token/cost optimization: audit, patch, govern
-├── config_loader.py               # Loads config.yaml (custom regex parser, no PyYAML)
-├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
-├── orchestrator.py                # Integration layer: wires all systems + config
-├── __main__.py                    # CLI entry point
-└── __init__.py
+├── results_verification.py        # Result quality (SMARC)
+├── orchestrator.py                # Integration layer
+├── config_loader.py               # YAML parser (no PyYAML)
+├── llm_provider.py                # Anthropic API (stdlib urllib)
+└── __main__.py                    # CLI entry point
 ```
 
-```
-┌─────────────────────────────────────────────────┐
-│                  Orchestrator                    │
-│  (config, multi-agent, scheduling, persistence) │
-├────────────┬───────────────┬────────────────────┤
-│ AntiIdling │ Performance   │ SelfImprovement    │
-│ +Filesystem│ +Config Thresh│ +Real Execution    │
-│  Scanner   │ +Intervention │ +LLM Proposals     │
-├────────────┴───────────────┴────────────────────┤
-│            ConfigLoader (config.yaml)            │
-│  Agents: loopy-0, loopy-1 (from monitoring cfg) │
-├─────────────────────────────────────────────────┤
-│              LLM Provider (optional)             │
-│  urllib → Anthropic API (ANTHROPIC_API_KEY)      │
-│  Falls back to rule-based if no key              │
-└─────────────────────────────────────────────────┘
-```
-
-</details>
-
-<details>
-<summary><b>State files</b></summary>
-
-Runtime state persisted to `~/.openclaw/workspace/self-optimization/state/` (gitignored):
-
-| File | Contents |
-|------|---------|
-| `last_run.json` | Timestamp and result of the most recent operation |
-| `activity_log.json` | Recent activity entries (FIFO capped at 100) |
-| `performance_history.json` | Performance tracking data over time |
-| `improvement_history.json` | Self-improvement execution log |
-| `capability_map.json` | Current capability proficiency levels |
-| `gateway_watchdog.json` | Watchdog check history (last 50 entries) |
-| `cost_governor.json` | Cost baselines, governor run history, alerts |
-
-</details>
-
-<details>
-<summary><b>Monitoring config reference</b></summary>
-
-`~/.openclaw/workspace/performance-system/monitoring/config.yaml`:
-
-```yaml
-monitoring:
-  agents:
-    - loopy      # normalized to loopy-0
-    - loopy1     # normalized to loopy-1
-
-performance_thresholds:
-  goal_completion_rate:
-    warning_level: 0.7
-    critical_level: 0.5
-  task_efficiency:
-    warning_level: 0.65
-    critical_level: 0.4
-
-intervention_escalation:
-  tier1:
-    duration: 2 weeks
-    actions: [performance_review, skill_assessment]
-  tier2:
-    duration: 1 month
-    actions: [targeted_coaching, personalized_learning_plan]
-  tier3:
-    duration: 3 months
-    actions: [comprehensive_performance_rehabilitation, external_skill_development_resources]
-```
-
-</details>
-
-<details>
-<summary><b>Troubleshooting</b></summary>
-
-**"No module named orchestrator"** — run from the project directory or use the venv python:
-```bash
-cd ~/.openclaw/workspace/self-optimization
-.venv/bin/python src/__main__.py status
-```
-
-**`activities_found` is 0** — the scanner only finds activity within the time window (2 hours for idle-check). Make a commit or edit a file, then re-run.
-
-**`daily_reflection.sh` still running** — deprecated, now forwards to the orchestrator. Delete `~/.openclaw/workspace/tools/daily_reflection.sh` to fully remove.
-
-**State files missing** — created on first run. Run any command and the `state/` directory will be populated.
-
-**Watchdog not running** — verify with `make watchdog-status`. If the crontab entry is missing, re-run `make install-watchdog`.
-
-</details>
-
----
+**Zero dependencies.** Entire system runs on Python stdlib. No `requests`, no `pyyaml`, no `psutil`. Cron jobs and launchd agents start fast and work without virtualenv activation.
 
 ## Development
 
 ```bash
 source .venv/bin/activate
-make check   # ruff lint + mypy typecheck + pytest (259 tests)
+make check   # ruff lint + mypy typecheck + pytest (304 tests)
 ```
 
 See `CLAUDE.md` for design decisions, test conventions, and contributor workflow.
