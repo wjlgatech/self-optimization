@@ -11,6 +11,7 @@ src/
 ├── multi_agent_performance.py     # Multi-agent performance tracking
 ├── recursive_self_improvement.py  # Self-improvement protocol
 ├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
+├── gateway_watchdog.py             # OpenClaw gateway health monitor & auto-restart
 ├── config_loader.py               # Loads performance-system/monitoring/config.yaml
 ├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
 ├── orchestrator.py                # Integration layer: wires all systems + config
@@ -95,11 +96,26 @@ python src/__main__.py run-daemon --interval 7200 --review-hour 23
 
 # System status
 python src/__main__.py status
+
+# Gateway watchdog (checks health, restarts if down)
+python src/__main__.py gateway-watchdog
+python src/__main__.py gateway-watchdog --port 31415
+```
+
+## Gateway Watchdog Installer
+
+One-command setup for the gateway health monitor (copies scripts to `~/.openclaw/scripts/`, uses system Python to avoid macOS sandbox issues with cron):
+
+```bash
+make install-watchdog     # deploy scripts + install cron job
+make uninstall-watchdog   # remove cron job + deployed scripts (preserves log)
+make watchdog-status      # show cron entry, deployed files, recent log
 ```
 
 ## Cron Setup
 
 Jobs are configured in `~/.openclaw/cron/jobs.json`:
+- **System crontab** (`crontab -l`): `gateway-watchdog` every 5 minutes (TCP health probe + launchctl restart) — installed via `make install-watchdog`
 - `self-opt-idle-check-loopy0`: Loopy-0 idle check every 2 hours
 - `self-opt-idle-check-loopy1`: Loopy-1 idle check every 2 hours (offset 15 min)
 - `self-opt-daily-review`: daily at 11 PM (replaces `tools/daily_reflection.sh`)

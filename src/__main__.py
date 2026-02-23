@@ -6,6 +6,7 @@ Usage:
     python src/__main__.py run-daemon [--interval 7200] [--review-hour 23]
     python src/__main__.py status
     python src/__main__.py intervention [--agent loopy-0]
+    python src/__main__.py gateway-watchdog [--port 31415]
 """
 
 import argparse
@@ -72,6 +73,17 @@ def main() -> None:
         "--agent", default="", help="Agent to check (default: current agent)"
     )
 
+    # gateway-watchdog
+    gw_parser = subparsers.add_parser(
+        "gateway-watchdog", help="Check gateway health and restart if down"
+    )
+    gw_parser.add_argument(
+        "--port", type=int, default=0, help="Gateway port (default: from config)"
+    )
+    gw_parser.add_argument(
+        "--token", default="", help="Gateway auth token (default: from config)"
+    )
+
     args = parser.parse_args()
 
     # Configure logging
@@ -116,6 +128,20 @@ def main() -> None:
         agent = args.agent if args.agent else ""
         result = orch.get_intervention_tier(agent)
         print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "gateway-watchdog":
+        from gateway_watchdog import GatewayWatchdog  # noqa: E402
+
+        kwargs: dict[str, object] = {"state_dir": args.state_dir or ""}
+        if args.port:
+            kwargs["port"] = args.port
+        if args.token:
+            kwargs["token"] = args.token
+        watchdog = GatewayWatchdog(**kwargs)  # type: ignore[arg-type]
+        result = watchdog.run_check()
+        print(json.dumps(result, indent=2, default=str))
+        if result.get("status") == "down":
+            sys.exit(2)
 
 
 if __name__ == "__main__":
