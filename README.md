@@ -143,6 +143,59 @@ Performance score = weighted combination: accuracy (40%) + efficiency (35%) + ad
 
 </details>
 
+### Cost Governor — stop burning money on tokens
+
+```bash
+make cost-audit     # find cost waste in your config
+make cost-status    # show savings vs baseline
+make cost-govern    # full governance cycle
+```
+
+<details>
+<summary><b>How the Cost Governor cuts spend by 90%+</b></summary>
+
+The governor attacks the two real cost drivers: **$/token** and **tokens/turn**.
+
+**A) Make most tokens cheap (biggest lever)**
+
+It detects if your default model is in the expensive tier (Opus at $15/M input) and recommends routing 80-95% of turns to cheap alternatives:
+
+| Strategy | Default model | Estimated savings |
+|----------|--------------|-------------------|
+| `aggressive` | ollama/llama3.3 (free) | 95%+ |
+| `balanced` | claude-haiku-4-5 ($0.80/M) | 90%+ |
+| `conservative` | keep current, trim waste | 30-50% |
+
+```bash
+# Preview what would change
+.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run
+
+# Apply it (creates backup first)
+.venv/bin/python src/__main__.py cost-apply --strategy balanced
+```
+
+**B) Make every turn smaller**
+
+The governor measures all auto-injected bootstrap files (AGENTS.md, SOUL.md, TOOLS.md, etc.) and flags bloat. It also detects:
+
+- Weak compaction mode (`safeguard` vs `aggressive`)
+- Heartbeats burning expensive model tokens on trivial inbox checks
+- Bootstrap caps set too high (default 150K chars — recommended 30K)
+
+**C) Track over time**
+
+Record a baseline before optimizing, then monitor drift:
+
+```bash
+.venv/bin/python src/__main__.py cost-baseline   # snapshot "before"
+# ... make changes ...
+.venv/bin/python src/__main__.py cost-status     # see savings vs baseline
+```
+
+The governor stores history (last 50 runs) and alerts when costs drift back up.
+
+</details>
+
 ---
 
 ## Technical Innovation
@@ -197,6 +250,13 @@ This approach is:
 <summary><b>Idempotent cron management</b></summary>
 
 The installer uses marker comments (`# openclaw-gateway-watchdog`) in crontab entries. Running `make install-watchdog` multiple times is safe — it removes old entries before adding the new one. Uninstall cleanly removes only the watchdog entry, preserving all other cron jobs.
+
+</details>
+
+<details>
+<summary><b>Non-additive savings estimation</b></summary>
+
+The Cost Governor calculates combined savings using `1 - product(1 - r_i)` instead of naive addition. Two 50% savings compound to 75% (not 100%). This prevents overpromising and caps at 95% max. Each recommendation includes its individual impact estimate plus the compound total.
 
 </details>
 
@@ -263,6 +323,14 @@ ls -la ~/.openclaw/workspace/memory/daily-reflections/
 
 # Daemon mode
 .venv/bin/python src/__main__.py run-daemon --interval 7200 --review-hour 23
+
+# Cost governor
+.venv/bin/python src/__main__.py cost-audit                          # audit config
+.venv/bin/python src/__main__.py cost-apply --strategy balanced      # apply optimizations
+.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run  # preview only
+.venv/bin/python src/__main__.py cost-baseline                       # record baseline
+.venv/bin/python src/__main__.py cost-status                         # savings vs baseline
+.venv/bin/python src/__main__.py cost-govern                         # full governor cycle
 ```
 
 </details>
@@ -278,6 +346,7 @@ src/
 ├── recursive_self_improvement.py  # Self-improvement protocol
 ├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
 ├── gateway_watchdog.py            # OpenClaw gateway health monitor & auto-restart
+├── cost_governor.py               # Token/cost optimization: audit, patch, govern
 ├── config_loader.py               # Loads config.yaml (custom regex parser, no PyYAML)
 ├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
 ├── orchestrator.py                # Integration layer: wires all systems + config
@@ -318,6 +387,7 @@ Runtime state persisted to `~/.openclaw/workspace/self-optimization/state/` (git
 | `improvement_history.json` | Self-improvement execution log |
 | `capability_map.json` | Current capability proficiency levels |
 | `gateway_watchdog.json` | Watchdog check history (last 50 entries) |
+| `cost_governor.json` | Cost baselines, governor run history, alerts |
 
 </details>
 

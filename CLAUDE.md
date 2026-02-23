@@ -100,7 +100,31 @@ python src/__main__.py status
 # Gateway watchdog (checks health, restarts if down)
 python src/__main__.py gateway-watchdog
 python src/__main__.py gateway-watchdog --port 31415
+
+# Cost governor (audit, optimize, track OpenClaw token/cost usage)
+python src/__main__.py cost-audit                          # find cost waste
+python src/__main__.py cost-apply --strategy balanced      # generate + apply optimized config
+python src/__main__.py cost-apply --strategy balanced --dry-run  # preview only
+python src/__main__.py cost-baseline                       # record current state as baseline
+python src/__main__.py cost-status                         # show savings vs baseline
+python src/__main__.py cost-govern                         # full governor cycle
 ```
+
+## Cost Governor
+
+Monitors and optimizes OpenClaw token/cost usage. Targets 90%+ reduction via:
+- **Model routing**: detect expensive model, recommend cheap/local alternatives
+- **Bootstrap diet**: measure auto-injected workspace files, enforce caps
+- **Compaction**: detect weak compaction mode, recommend aggressive
+- **Heartbeat**: detect expensive heartbeat model, recommend cheap
+
+```bash
+make cost-audit     # audit current config for cost waste
+make cost-status    # show savings vs baseline
+make cost-govern    # full governor cycle (audit + compare + alert)
+```
+
+Strategies for `cost-apply`: `aggressive` (local model), `balanced` (Haiku), `conservative` (keep model, trim waste).
 
 ## Gateway Watchdog Installer
 

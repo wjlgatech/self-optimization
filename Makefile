@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test check clean install-watchdog uninstall-watchdog watchdog-status
+.PHONY: install lint format typecheck test check clean install-watchdog uninstall-watchdog watchdog-status cost-audit cost-status cost-govern
 
 install:
 	pip install -e ".[dev]"
@@ -28,3 +28,12 @@ uninstall-watchdog:
 
 watchdog-status:
 	bash scripts/install-watchdog.sh status
+
+cost-audit:
+	.venv/bin/python src/__main__.py cost-audit
+
+cost-status:
+	.venv/bin/python src/__main__.py cost-status
+
+cost-govern:
+	.venv/bin/python src/__main__.py cost-govern
