@@ -6,6 +6,12 @@ Usage:
     python src/__main__.py run-daemon [--interval 7200] [--review-hour 23]
     python src/__main__.py status
     python src/__main__.py intervention [--agent loopy-0]
+    python src/__main__.py gateway-watchdog [--port 31415]
+    python src/__main__.py cost-audit
+    python src/__main__.py cost-apply [--strategy balanced]
+    python src/__main__.py cost-baseline
+    python src/__main__.py cost-status
+    python src/__main__.py cost-govern
 """
 
 import argparse
@@ -72,6 +78,44 @@ def main() -> None:
         "--agent", default="", help="Agent to check (default: current agent)"
     )
 
+    # cost-audit
+    subparsers.add_parser("cost-audit", help="Audit OpenClaw config for cost waste")
+
+    # cost-apply
+    cost_apply_parser = subparsers.add_parser(
+        "cost-apply", help="Generate and apply optimized config"
+    )
+    cost_apply_parser.add_argument(
+        "--strategy",
+        choices=["aggressive", "balanced", "conservative"],
+        default="balanced",
+        help="Optimization strategy (default: balanced)",
+    )
+    cost_apply_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show patch without applying",
+    )
+
+    # cost-baseline
+    subparsers.add_parser("cost-baseline", help="Record current state as cost baseline")
+
+    # cost-status
+    subparsers.add_parser("cost-status", help="Show cost governance status vs baseline")
+
+    # cost-govern
+    subparsers.add_parser("cost-govern", help="Run cost governor cycle (audit + compare + alert)")
+
+    # gateway-watchdog
+    gw_parser = subparsers.add_parser(
+        "gateway-watchdog", help="Check gateway health and restart if down"
+    )
+    gw_parser.add_argument(
+        "--port", type=int, default=0, help="Gateway port (default: from config)"
+    )
+    gw_parser.add_argument(
+        "--token", default="", help="Gateway auth token (default: from config)"
+    )
+
     args = parser.parse_args()
 
     # Configure logging
@@ -116,6 +160,80 @@ def main() -> None:
         agent = args.agent if args.agent else ""
         result = orch.get_intervention_tier(agent)
         print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "gateway-watchdog":
+        from gateway_watchdog import GatewayWatchdog  # noqa: E402
+
+        kwargs: dict[str, object] = {"state_dir": args.state_dir or ""}
+        if args.port:
+            kwargs["port"] = args.port
+        if args.token:
+            kwargs["token"] = args.token
+        watchdog = GatewayWatchdog(**kwargs)  # type: ignore[arg-type]
+        result = watchdog.run_check()
+        print(json.dumps(result, indent=2, default=str))
+        if result.get("status") == "down":
+            sys.exit(2)
+
+    elif args.command == "cost-audit":
+        from cost_governor import CostGovernor  # noqa: E402
+
+        gov = CostGovernor(
+            workspace_dir=args.workspace_dir or "",
+            state_dir=args.state_dir or "",
+        )
+        result = gov.audit()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "cost-apply":
+        from cost_governor import CostGovernor  # noqa: E402
+
+        gov = CostGovernor(
+            workspace_dir=args.workspace_dir or "",
+            state_dir=args.state_dir or "",
+        )
+        optimized = gov.generate_optimized_config(strategy=args.strategy)
+        print(json.dumps(optimized, indent=2, default=str))
+
+        if not args.dry_run:
+            confirm = input("\nApply this config? [y/N] ").strip().lower()
+            if confirm == "y":
+                apply_result = gov.apply_config(optimized["patch"])
+                print(json.dumps(apply_result, indent=2, default=str))
+            else:
+                print("Skipped.")
+
+    elif args.command == "cost-baseline":
+        from cost_governor import CostGovernor  # noqa: E402
+
+        gov = CostGovernor(
+            workspace_dir=args.workspace_dir or "",
+            state_dir=args.state_dir or "",
+        )
+        baseline = gov.record_baseline(label="manual")
+        print(json.dumps(baseline, indent=2, default=str))
+
+    elif args.command == "cost-status":
+        from cost_governor import CostGovernor  # noqa: E402
+
+        gov = CostGovernor(
+            workspace_dir=args.workspace_dir or "",
+            state_dir=args.state_dir or "",
+        )
+        result = gov.status()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "cost-govern":
+        from cost_governor import CostGovernor  # noqa: E402
+
+        gov = CostGovernor(
+            workspace_dir=args.workspace_dir or "",
+            state_dir=args.state_dir or "",
+        )
+        result = gov.run_governor()
+        print(json.dumps(result, indent=2, default=str))
+        if result.get("status") == "needs_attention":
+            sys.exit(1)
 
 
 if __name__ == "__main__":

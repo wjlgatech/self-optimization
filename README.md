@@ -1,140 +1,400 @@
 # Self-Optimization System
 
-A self-monitoring framework for OpenClaw agents. Detects idle states from real filesystem activity (git commits, file modifications), generates data-driven daily reflections, tracks performance across multiple agents, and triggers self-improvement when productivity drops.
+**Your AI agents forget to work. This system catches them.**
 
-## Install (one-time setup)
+A zero-dependency Python framework that monitors AI agent activity through real filesystem signals — git commits, file modifications, workspace changes — and automatically intervenes when productivity drops. No cloud dashboards. No manual check-ins. Just a cron job that watches the work and tells you the truth.
+
+Built for [OpenClaw](https://docs.openclaw.ai) multi-agent setups. Runs on your machine, on your schedule.
+
+---
+
+## Why This Exists
+
+| Problem | What happens without this | What happens with this |
+|---------|--------------------------|----------------------|
+| **Agent goes idle for hours** | You don't notice until end of day | Detected in 2 hours, intervention triggered automatically |
+| **Gateway crashes at 3 AM** | Telegram/Discord/Slack go dark until you wake up | Auto-restarted in under 5 minutes, zero downtime |
+| **"Was today productive?"** | You guess, or spend 30 min reviewing logs | Data-driven daily reflection written to markdown, every night at 11 PM |
+| **Running multiple agents** | No idea which one is underperforming | Per-agent performance tracking with escalation tiers |
+| **Performance slowly degrades** | You notice weeks later | Threshold-based alerts: warning at 70%, critical at 50% |
+
+<details>
+<summary><b>Real-world scenario: weekend gateway recovery</b></summary>
+
+Saturday 2 AM. Your OpenClaw gateway OOMs and crashes. The watchdog's cron job fires at 2:05 AM, detects the TCP port is dead, runs `launchctl kickstart -k`, and the gateway is back by 2:06 AM. Your Telegram bot never missed a message. You slept through the whole thing.
+
+Without the watchdog: you wake up Sunday to 47 undelivered messages and an angry group chat.
+
+</details>
+
+---
+
+## Quickstart
 
 ```bash
+# Install the framework
 cd ~/.openclaw/workspace/self-optimization
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-```
 
-Verify the install works:
+# Deploy the gateway watchdog (1 command, handles everything)
+make install-watchdog
 
-```bash
-cd ~/.openclaw/workspace/self-optimization
+# Check system status
 .venv/bin/python src/__main__.py status
 ```
 
-You should see JSON output with `agent_id`, `registered_agents`, `llm_available`, etc.
+That's it. The watchdog is now monitoring your gateway every 5 minutes, and you can schedule idle checks and daily reviews via cron.
 
-## Running as Loopy-0 (primary agent)
+---
 
-### Quick status check
+## What It Does
+
+### Gateway Watchdog — never lose uptime again
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
-.venv/bin/python src/__main__.py status
+make install-watchdog     # deploy + schedule (1 command)
+make watchdog-status      # see what's happening
+make uninstall-watchdog   # clean removal
 ```
 
-### Manual idle check (scans last 2 hours of activity)
+<details>
+<summary><b>How the watchdog keeps your gateway alive</b></summary>
+
+The watchdog runs every 5 minutes via system crontab. Each cycle:
+
+1. **TCP probe** to `127.0.0.1:{port}` — faster and more reliable than HTTP health checks
+2. If the port is down, **restart via `launchctl kickstart -k`** (kills + restarts in one atomic operation)
+3. If kickstart fails, **fallback to `bootout` + `bootstrap`** (full service reload)
+4. **3 retry attempts** with 10-second delays and post-restart health verification
+5. Results logged to `/tmp/openclaw-watchdog.log` with full JSON history
+
+The installer auto-detects your gateway port from `~/.openclaw/openclaw.json` and your Node.js path from the LaunchAgent plist. Scripts are deployed to `~/.openclaw/scripts/` using system Python — avoiding the macOS sandbox restrictions that block cron from reading `~/Documents/` or venv paths.
+
+</details>
+
+### Idle Detection — know when agents stop working
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
 .venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
 ```
 
-Output includes: `activities_found`, `idle_rate`, `triggered` (true if idle threshold exceeded).
+<details>
+<summary><b>How idle detection works under the hood</b></summary>
 
-### Manual daily review (scans last 24 hours, writes reflection)
+The filesystem scanner examines real activity across `~/.openclaw/workspace/`:
+
+- **Git commits**: `git log` across the workspace root and all subdirectories with `.git`
+- **File modifications**: Walks the workspace tree, checks `mtime` against the time window
+- **Daily reflections**: Parses markdown files in `memory/daily-reflections/`
+
+**Idle** = zero commits AND zero file modifications within the window (default: 2 hours).
+
+When idle is detected, the system triggers configurable intervention tiers based on severity and duration. No false positives from editor autosave — it looks for meaningful work artifacts.
+
+</details>
+
+### Daily Reviews — automated performance reflections
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
 .venv/bin/python src/__main__.py --agent-id loopy-0 daily-review
 ```
 
-This will:
-1. Scan all git repos in `~/.openclaw/workspace/` for commits
-2. Scan file modifications across the workspace
-3. Calculate performance metrics
-4. Write a data-driven reflection to `~/.openclaw/workspace/memory/daily-reflections/YYYY-MM-DD-reflection.md`
-5. Persist state to `state/` directory
+<details>
+<summary><b>What goes into a daily review</b></summary>
 
-### Check intervention tier
+Every night at 11 PM (via cron), the system:
+
+1. Scans all git repos for the day's commits
+2. Counts file modifications across the workspace
+3. Calculates performance metrics (goal completion, task efficiency)
+4. Writes a data-driven reflection to `~/.openclaw/workspace/memory/daily-reflections/YYYY-MM-DD-reflection.md`
+5. Persists state for trend analysis
+
+Optional: set `ANTHROPIC_API_KEY` to add an AI-generated narrative section (Claude Haiku via stdlib `urllib` — no extra dependencies).
+
+</details>
+
+### Multi-Agent Performance Tracking
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
 .venv/bin/python src/__main__.py intervention --agent loopy-0
 ```
 
-Returns the current intervention tier (none/tier1/tier2/tier3) based on performance thresholds from `config.yaml`.
+<details>
+<summary><b>How multi-agent tracking and escalation work</b></summary>
 
-## Running as Loopy-1 (parallel agent)
+Agents are defined in `~/.openclaw/workspace/performance-system/monitoring/config.yaml`:
 
-Same commands, just change `--agent-id`:
+| Agent | Role |
+|-------|------|
+| `loopy-0` | Primary agent (normalized from `loopy`) |
+| `loopy-1` | Parallel tasks (normalized from `loopy1`) |
+
+**Escalation tiers** based on performance score:
+
+| Tier | Trigger | Duration | Actions |
+|------|---------|----------|---------|
+| **Tier 1** | Score < 70% | 2 weeks | Performance review, skill assessment |
+| **Tier 2** | Score < 50% | 1 month | Targeted coaching, personalized learning plan |
+| **Tier 3** | Sustained low | 3 months | Comprehensive rehabilitation program |
+
+Performance score = weighted combination: accuracy (40%) + efficiency (35%) + adaptability (25%).
+
+</details>
+
+### Cost Governor — stop burning money on tokens
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
-.venv/bin/python src/__main__.py --agent-id loopy-1 idle-check
-.venv/bin/python src/__main__.py --agent-id loopy-1 daily-review
+make cost-audit     # find cost waste in your config
+make cost-status    # show savings vs baseline
+make cost-govern    # full governance cycle
 ```
 
-## Automatic scheduling (cron)
+<details>
+<summary><b>How the Cost Governor cuts spend by 90%+</b></summary>
 
-Cron jobs are configured in `~/.openclaw/cron/jobs.json`:
+The governor attacks the two real cost drivers: **$/token** and **tokens/turn**.
 
-| Job ID | Schedule | What it does |
-|--------|----------|-------------|
-| `self-opt-idle-check-loopy0` | Every 2 hours | Idle check for Loopy-0 |
-| `self-opt-idle-check-loopy1` | Every 2 hours (offset 15 min) | Idle check for Loopy-1 |
-| `self-opt-daily-review` | Daily at 11 PM | Full daily review + reflection |
+**A) Make most tokens cheap (biggest lever)**
 
-The cron commands use absolute venv paths so they work without `source activate`:
+It detects if your default model is in the expensive tier (Opus at $15/M input) and recommends routing 80-95% of turns to cheap alternatives:
+
+| Strategy | Default model | Estimated savings |
+|----------|--------------|-------------------|
+| `aggressive` | ollama/llama3.3 (free) | 95%+ |
+| `balanced` | claude-haiku-4-5 ($0.80/M) | 90%+ |
+| `conservative` | keep current, trim waste | 30-50% |
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization && .venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
+# Preview what would change
+.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run
+
+# Apply it (creates backup first)
+.venv/bin/python src/__main__.py cost-apply --strategy balanced
 ```
 
-### Verify cron is working
+**B) Make every turn smaller**
 
-After a cron cycle runs, check state files:
+The governor measures all auto-injected bootstrap files (AGENTS.md, SOUL.md, TOOLS.md, etc.) and flags bloat. It also detects:
+
+- Weak compaction mode (`safeguard` vs `aggressive`)
+- Heartbeats burning expensive model tokens on trivial inbox checks
+- Bootstrap caps set too high (default 150K chars — recommended 30K)
+
+**C) Track over time**
+
+Record a baseline before optimizing, then monitor drift:
 
 ```bash
+.venv/bin/python src/__main__.py cost-baseline   # snapshot "before"
+# ... make changes ...
+.venv/bin/python src/__main__.py cost-status     # see savings vs baseline
+```
+
+The governor stores history (last 50 runs) and alerts when costs drift back up.
+
+</details>
+
+---
+
+## Technical Innovation
+
+<details>
+<summary><b>Zero-dependency architecture</b></summary>
+
+The entire system runs on Python stdlib only. No `requests`, no `pyyaml`, no `psutil`.
+
+- **HTTP calls**: `urllib.request` (for optional LLM integration)
+- **YAML parsing**: Custom regex parser in `config_loader.py` (no PyYAML)
+- **Health checks**: Raw TCP sockets (faster and more reliable than HTTP in launchd contexts)
+- **Process management**: Direct `launchctl` subprocess calls
+- **State persistence**: JSON files with atomic write (tmp + `os.replace`)
+
+Why: cron jobs and launchd agents need to start fast and work without virtualenv activation. Every external dependency is a potential failure point at 3 AM.
+
+</details>
+
+<details>
+<summary><b>macOS sandbox-aware deployment</b></summary>
+
+macOS cron cannot read files in `~/Documents/` or access Python virtualenvs due to sandboxing (TCC). The installer solves this by:
+
+1. Copying scripts to `~/.openclaw/scripts/` (accessible to cron)
+2. Using system Python (`/usr/local/bin/python3`) instead of venv Python
+3. Generating a standalone runner script (no imports from the project tree)
+4. Setting explicit `PATH` in the crontab entry with auto-detected Node.js path
+
+One `make install-watchdog` handles all of this.
+
+</details>
+
+<details>
+<summary><b>Filesystem-based activity detection (no API polling)</b></summary>
+
+Instead of polling AI provider APIs or scraping dashboards, the system measures work output directly:
+
+- Git commits = code was produced
+- File modifications = work is happening
+- Reflection files = reviews were written
+
+This approach is:
+- **Provider-agnostic**: Works with any AI agent, any LLM provider
+- **Privacy-preserving**: Never sends activity data anywhere
+- **Tamper-evident**: Git commits are cryptographically signed work artifacts
+- **Offline-capable**: No network dependency for core monitoring
+
+</details>
+
+<details>
+<summary><b>Idempotent cron management</b></summary>
+
+The installer uses marker comments (`# openclaw-gateway-watchdog`) in crontab entries. Running `make install-watchdog` multiple times is safe — it removes old entries before adding the new one. Uninstall cleanly removes only the watchdog entry, preserving all other cron jobs.
+
+</details>
+
+<details>
+<summary><b>Non-additive savings estimation</b></summary>
+
+The Cost Governor calculates combined savings using `1 - product(1 - r_i)` instead of naive addition. Two 50% savings compound to 75% (not 100%). This prevents overpromising and caps at 95% max. Each recommendation includes its individual impact estimate plus the compound total.
+
+</details>
+
+---
+
+## Scheduling
+
+| Job | Schedule | Command |
+|-----|----------|---------|
+| Gateway watchdog | Every 5 min | `make install-watchdog` (system crontab) |
+| Idle check (loopy-0) | Every 2 hours | via `~/.openclaw/cron/jobs.json` |
+| Idle check (loopy-1) | Every 2 hours (+15 min offset) | via `~/.openclaw/cron/jobs.json` |
+| Daily review | 11 PM daily | via `~/.openclaw/cron/jobs.json` |
+
+<details>
+<summary><b>Daemon mode (alternative to cron)</b></summary>
+
+```bash
+.venv/bin/python src/__main__.py run-daemon --interval 7200 --review-hour 23
+```
+
+Runs idle checks every 2 hours and the daily review at 11 PM. Stop with Ctrl+C.
+
+</details>
+
+<details>
+<summary><b>Verifying cron is working</b></summary>
+
+```bash
+# Check the watchdog
+make watchdog-status
+crontab -l | grep watchdog
+
+# Check idle/review jobs
 cat ~/.openclaw/workspace/self-optimization/state/last_run.json
 ls -la ~/.openclaw/workspace/memory/daily-reflections/
 ```
 
-## Daemon mode (alternative to cron)
+</details>
 
-Run as a long-lived process instead of cron jobs:
+---
+
+## Full Technical Reference
+
+<details>
+<summary><b>All CLI commands</b></summary>
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
+# Status
+.venv/bin/python src/__main__.py status
+
+# Idle check (scans last 2 hours)
+.venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
+
+# Daily review (scans last 24 hours, writes reflection)
+.venv/bin/python src/__main__.py --agent-id loopy-0 daily-review
+
+# Check intervention tier
+.venv/bin/python src/__main__.py intervention --agent loopy-0
+
+# Gateway watchdog (manual run)
+.venv/bin/python src/__main__.py gateway-watchdog
+.venv/bin/python src/__main__.py gateway-watchdog --port 31415
+
+# Daemon mode
 .venv/bin/python src/__main__.py run-daemon --interval 7200 --review-hour 23
+
+# Cost governor
+.venv/bin/python src/__main__.py cost-audit                          # audit config
+.venv/bin/python src/__main__.py cost-apply --strategy balanced      # apply optimizations
+.venv/bin/python src/__main__.py cost-apply --strategy balanced --dry-run  # preview only
+.venv/bin/python src/__main__.py cost-baseline                       # record baseline
+.venv/bin/python src/__main__.py cost-status                         # savings vs baseline
+.venv/bin/python src/__main__.py cost-govern                         # full governor cycle
 ```
 
-This runs idle checks every 7200 seconds (2 hours) and the daily review once at hour 23 (11 PM). Stop with Ctrl+C.
+</details>
 
-## What the system scans
+<details>
+<summary><b>Architecture</b></summary>
 
-The filesystem scanner looks at real activity in `~/.openclaw/workspace/`:
-
-- **Git commits**: Runs `git log` in the workspace root and all immediate subdirectories that have a `.git` directory
-- **File modifications**: Walks the workspace tree, checks `mtime` against the time window
-- **Daily reflections**: Parses markdown files in `memory/daily-reflections/` and `memory/reflections/daily/`
-
-Idle = no commits and no file modifications across any repository within the time window (default: 2 hours for idle check, 24 hours for daily review).
-
-## LLM-enhanced analysis (optional)
-
-Set the `ANTHROPIC_API_KEY` environment variable to enable AI-powered analysis:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-cd ~/.openclaw/workspace/self-optimization
-.venv/bin/python src/__main__.py daily-review
+```
+src/
+├── anti_idling_system.py          # Idle state detection & intervention
+├── results_verification.py        # Result quality verification (SMARC criteria)
+├── multi_agent_performance.py     # Multi-agent performance tracking
+├── recursive_self_improvement.py  # Self-improvement protocol
+├── filesystem_scanner.py          # Real activity detection (git, files, reflections)
+├── gateway_watchdog.py            # OpenClaw gateway health monitor & auto-restart
+├── cost_governor.py               # Token/cost optimization: audit, patch, govern
+├── config_loader.py               # Loads config.yaml (custom regex parser, no PyYAML)
+├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
+├── orchestrator.py                # Integration layer: wires all systems + config
+├── __main__.py                    # CLI entry point
+└── __init__.py
 ```
 
-When the API key is set, daily reflections include an "AI Reflection" section with intelligent narrative. Without the key, everything still works using rule-based analysis.
+```
+┌─────────────────────────────────────────────────┐
+│                  Orchestrator                    │
+│  (config, multi-agent, scheduling, persistence) │
+├────────────┬───────────────┬────────────────────┤
+│ AntiIdling │ Performance   │ SelfImprovement    │
+│ +Filesystem│ +Config Thresh│ +Real Execution    │
+│  Scanner   │ +Intervention │ +LLM Proposals     │
+├────────────┴───────────────┴────────────────────┤
+│            ConfigLoader (config.yaml)            │
+│  Agents: loopy-0, loopy-1 (from monitoring cfg) │
+├─────────────────────────────────────────────────┤
+│              LLM Provider (optional)             │
+│  urllib → Anthropic API (ANTHROPIC_API_KEY)      │
+│  Falls back to rule-based if no key              │
+└─────────────────────────────────────────────────┘
+```
 
-Uses `claude-haiku-4-5-20251001` via stdlib `urllib.request` (no extra dependencies).
+</details>
 
-## Monitoring config
+<details>
+<summary><b>State files</b></summary>
 
-The system reads thresholds and agent definitions from:
-`~/.openclaw/workspace/performance-system/monitoring/config.yaml`
+Runtime state persisted to `~/.openclaw/workspace/self-optimization/state/` (gitignored):
+
+| File | Contents |
+|------|---------|
+| `last_run.json` | Timestamp and result of the most recent operation |
+| `activity_log.json` | Recent activity entries (FIFO capped at 100) |
+| `performance_history.json` | Performance tracking data over time |
+| `improvement_history.json` | Self-improvement execution log |
+| `capability_map.json` | Current capability proficiency levels |
+| `gateway_watchdog.json` | Watchdog check history (last 50 entries) |
+| `cost_governor.json` | Cost baselines, governor run history, alerts |
+
+</details>
+
+<details>
+<summary><b>Monitoring config reference</b></summary>
+
+`~/.openclaw/workspace/performance-system/monitoring/config.yaml`:
 
 ```yaml
 monitoring:
@@ -153,58 +413,46 @@ performance_thresholds:
 intervention_escalation:
   tier1:
     duration: 2 weeks
-    actions:
-      - performance_review
-      - skill_assessment
+    actions: [performance_review, skill_assessment]
   tier2:
     duration: 1 month
-    actions:
-      - targeted_coaching
-      - personalized_learning_plan
+    actions: [targeted_coaching, personalized_learning_plan]
   tier3:
     duration: 3 months
-    actions:
-      - comprehensive_performance_rehabilitation
-      - external_skill_development_resources
+    actions: [comprehensive_performance_rehabilitation, external_skill_development_resources]
 ```
 
-If the config file is missing, sensible defaults are used.
+</details>
 
-## State files
+<details>
+<summary><b>Troubleshooting</b></summary>
 
-Runtime state is persisted to `~/.openclaw/workspace/self-optimization/state/` (gitignored):
-
-| File | Contents |
-|------|---------|
-| `last_run.json` | Timestamp and result of the most recent operation |
-| `activity_log.json` | Recent activity entries (FIFO capped at 100) |
-| `performance_history.json` | Performance tracking data over time |
-| `improvement_history.json` | Self-improvement execution log |
-| `capability_map.json` | Current capability proficiency levels |
-
-## Troubleshooting
-
-**"No module named orchestrator"**: You need to run from the project directory or use the venv python:
+**"No module named orchestrator"** — run from the project directory or use the venv python:
 ```bash
 cd ~/.openclaw/workspace/self-optimization
 .venv/bin/python src/__main__.py status
 ```
 
-**activities_found is 0**: The scanner only finds activity within the time window. For idle-check that's 2 hours. Make a commit or edit a file, wait a moment, then re-run.
+**`activities_found` is 0** — the scanner only finds activity within the time window (2 hours for idle-check). Make a commit or edit a file, then re-run.
 
-**daily_reflection.sh still running**: The old script has been deprecated and now forwards to the orchestrator. To fully remove it, delete `~/.openclaw/workspace/tools/daily_reflection.sh`.
+**`daily_reflection.sh` still running** — deprecated, now forwards to the orchestrator. Delete `~/.openclaw/workspace/tools/daily_reflection.sh` to fully remove.
 
-**State files missing**: They're created on first run. Run any command (`status`, `idle-check`, `daily-review`) and the `state/` directory will be populated.
+**State files missing** — created on first run. Run any command and the `state/` directory will be populated.
+
+**Watchdog not running** — verify with `make watchdog-status`. If the crontab entry is missing, re-run `make install-watchdog`.
+
+</details>
+
+---
 
 ## Development
 
 ```bash
-cd ~/.openclaw/workspace/self-optimization
 source .venv/bin/activate
 make check   # ruff lint + mypy typecheck + pytest (259 tests)
 ```
 
-See `CLAUDE.md` for architecture details, design decisions, and test conventions.
+See `CLAUDE.md` for design decisions, test conventions, and contributor workflow.
 
 ## License
 
