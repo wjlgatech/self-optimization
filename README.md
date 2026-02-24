@@ -236,6 +236,70 @@ Thresholds configured in `config.yaml`. Falls back to sensible defaults if confi
 
 ---
 
+## 6. Marketing Eval: Close the Loop on Content
+
+**The problem you're solving:** You wrote marketing content for your project — social posts, articles, launch announcements. Then you published it and never looked at it again. No impressions tracked. No engagement measured. No way to know what's working. Your optimization system optimizes everything except how you tell people about it.
+
+**With this:** The same DISCOVER → SCORE → RECOMMEND → REPORT architecture that evaluates code quality now evaluates marketing content. Five sub-scores, channel-normalized benchmarks, six recommendation types, and GitHub Issues on grade degradation.
+
+```bash
+make marketing-discover    # scan marketing/ for content
+make marketing-eval        # full evaluation report
+make marketing-status      # inventory: published vs draft
+```
+
+**Scoring (weighted composite, 0-100):**
+
+| Sub-score | Weight | What it measures |
+|-----------|--------|------------------|
+| Engagement rate | 30% | engagements / impressions, normalized |
+| Reach | 20% | impressions vs channel benchmarks (Twitter: 5K good, LinkedIn: 2K good) |
+| Conversion | 20% | clicks + conversions relative to engagement |
+| Content quality | 15% | structural: word count, CTAs, links, code blocks, hashtags |
+| Freshness | 15% | decay: `max(0, 100 - days_old * 2)` |
+
+Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F < 60. Draft content scored on quality only.
+
+<details>
+<summary><b>Technical innovation: channel-normalized cross-platform comparison</b></summary>
+
+Different platforms have wildly different reach baselines. The scoring engine normalizes using channel benchmarks — a LinkedIn post with 2,000 impressions and a tweet with 5,000 impressions both score "good" (50/100). This enables honest cross-platform comparison and surfaces channel arbitrage: where your content overperforms relative to the platform norm.
+
+10x signal detection flags any post with 3x the average engagement for replication analysis.
+
+</details>
+
+<details>
+<summary><b>Implementation: the closed loop</b></summary>
+
+```
+COLLECT → ANALYZE → ADVISE → EXECUTE → EVALUATE → REPEAT
+  │          │         │         │          │         │
+  manual    auto      auto    manual      auto     semi
+```
+
+- **COLLECT**: `marketing-discover` scans `marketing/`, parses multi-post files, SHA-256 fingerprints for drift detection
+- **ANALYZE**: 5-score weighted composite with channel benchmarks
+- **ADVISE**: 6 recommendation types (channel optimization, attribute correlation, cadence, underperformers, next content, 10x signals) + intervention tiers (C→refresh, D→A/B test, F→full audit)
+- **EXECUTE**: Manual — human acts on recommendations (no auto-posting)
+- **EVALUATE**: 90-entry FIFO history, trend tracking, GitHub Issues on grade drop
+- **REPEAT**: Weekly CI (`.github/workflows/marketing-eval.yml`), daily orchestrator integration
+
+Record metrics via CLI:
+```bash
+python src/__main__.py marketing-metrics \
+  --content-id social-posts-post-1 \
+  --impressions 5000 --engagements 200 --clicks 45
+
+python src/__main__.py marketing-publish \
+  --content-id social-posts-post-1 \
+  --url https://x.com/post/1
+```
+
+</details>
+
+---
+
 ## Safety, Efficiency & Scalability
 
 Independent evaluation across 11 source modules (~3,200 lines):

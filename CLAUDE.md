@@ -15,6 +15,7 @@ src/
 ├── config_loader.py               # Loads performance-system/monitoring/config.yaml
 ├── llm_provider.py                # Anthropic API client (optional, stdlib urllib)
 ├── orchestrator.py                # Integration layer: wires all systems + config
+├── marketing_eval.py             # Marketing effectiveness monitor
 ├── __main__.py                    # CLI entry point
 └── __init__.py
 tests/
@@ -30,6 +31,7 @@ tests/
 ├── test_functional.py                # Functional/scenario tests
 ├── test_edge_cases.py                # Edge case & robustness tests
 ├── test_contract_and_regression.py   # Contract + regression tests
+├── test_marketing_eval.py            # Marketing eval tests
 ├── conftest.py                       # Centralized sys.path setup
 └── __init__.py
 state/                                # Runtime state (gitignored)
@@ -292,6 +294,52 @@ Run all at once with `make check`.
 - `get_intervention_tier()` maps performance score to tier1/tier2/tier3 via config thresholds
 - `daily_reflection.sh` is deprecated; forwards to `python src/__main__.py daily-review`
 
+## Marketing Eval Engine
+
+Monitors marketing content effectiveness using the same DISCOVER → SCORE → RECOMMEND → REPORT pattern.
+
+### CLI Commands
+
+```bash
+python src/__main__.py marketing-eval                   # full eval (JSON)
+python src/__main__.py marketing-eval --markdown        # human-readable report
+python src/__main__.py marketing-discover               # scan marketing/ for content
+python src/__main__.py marketing-score                  # score all content
+python src/__main__.py marketing-status                 # inventory: published vs draft
+python src/__main__.py marketing-metrics --content-id social-posts-post-1 --impressions 5000 --engagements 200
+python src/__main__.py marketing-publish --content-id social-posts-post-1 --url https://x.com/post/1
+python src/__main__.py marketing-recommend              # improvement recommendations
+```
+
+Makefile shortcuts: `make marketing-eval`, `make marketing-discover`, `make marketing-status`.
+
+### Scoring Formula (weighted composite, 0-100)
+
+| Sub-score | Weight | Formula |
+|-----------|--------|---------|
+| engagement_rate | 30% | engagements / impressions * 1000, capped at 100 |
+| reach | 20% | impressions normalized against channel benchmarks |
+| conversion | 20% | (clicks + conversions) / engagements * 200, capped at 100 |
+| content_quality | 15% | rule-based: word count + CTA + link + code + hashtags (20 pts each) |
+| freshness | 15% | max(0, 100 - days_since_published * 2) |
+
+Draft content receives `content_quality` score only. Grade: A≥90, B≥80, C≥70, D≥60, F<60.
+
+### State Files (in `state/`, gitignored)
+
+- `marketing_content.json` — content records with metrics and status
+- `marketing_eval_history.json` — 90-entry FIFO eval history
+- `marketing_content_hashes.json` — SHA-256 hashes for drift detection
+
+### CI/CD
+
+- `.github/workflows/marketing-eval.yml` — weekly Monday 9 AM UTC + on push to `marketing/**`
+- Creates GitHub Issue if grade drops below B (label: `marketing-eval`)
+
+### Orchestrator Integration
+
+If `marketing/` directory exists, `daily_review()` automatically includes marketing eval results.
+
 ## Import Pattern
 
 ```python
@@ -305,4 +353,5 @@ from filesystem_scanner import FilesystemScanner
 from config_loader import load_monitoring_config
 from llm_provider import LLMProvider
 from self_eval import SelfEvalEngine
+from marketing_eval import MarketingEvalEngine
 ```
