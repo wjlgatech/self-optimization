@@ -97,7 +97,8 @@ class TestIdleCheck:
         assert "timestamp" in result
         assert "idle_rate" in result
         assert "triggered" in result
-        assert "actions_taken" in result
+        assert "actions_proposed" in result
+        assert "actions_executed" in result
         assert "activities_found" in result
 
     def test_idle_check_detects_files(self, tmp_path):
@@ -241,3 +242,75 @@ class TestStopDaemon:
         orch._daemon_running = True
         orch.stop_daemon()
         assert orch._daemon_running is False
+
+
+# ── Action Handler Wiring ──────────────────────────────────────────────
+
+
+class TestActionHandlerWiring:
+    def test_action_handlers_registered_on_init(self, tmp_path):
+        """Orchestrator registers action handlers for all 5 emergency actions."""
+        orch = SelfOptimizationOrchestrator(
+            state_dir=str(tmp_path / "state"),
+            workspace_dir=str(tmp_path / "workspace"),
+        )
+        expected_actions = [
+            "conduct_strategic_analysis",
+            "explore_new_skill_development",
+            "start_research_sprint",
+            "design_experimental_prototype",
+            "initiate_user_feedback_loop",
+        ]
+        for action in expected_actions:
+            assert action in orch.anti_idling.action_handlers
+
+    def test_idle_check_dispatches_actions(self, tmp_path):
+        """idle_check populates actions_executed when idle rate exceeds threshold."""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        orch = SelfOptimizationOrchestrator(
+            state_dir=str(tmp_path / "state"),
+            workspace_dir=str(workspace),
+            idle_threshold=0.01,  # very low threshold → always triggers
+        )
+        result = orch.idle_check()
+        assert result["triggered"] is True
+        assert len(result["actions_proposed"]) > 0
+        assert len(result["actions_executed"]) > 0
+
+    def test_idle_check_actions_executed_updates_capability_map(self, tmp_path):
+        """Dispatched actions update capability_map via execute_improvement."""
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        orch = SelfOptimizationOrchestrator(
+            state_dir=str(tmp_path / "state"),
+            workspace_dir=str(workspace),
+            idle_threshold=0.01,
+        )
+        initial_history = len(orch.improvement.improvement_history)
+        orch.idle_check()
+        # execute_improvement should have been called, adding to history
+        assert len(orch.improvement.improvement_history) > initial_history
+
+    def test_on_idle_triggered_runs_improvement(self, tmp_path):
+        """_on_idle_triggered executes an improvement proposal when strategies exist."""
+        orch = SelfOptimizationOrchestrator(
+            state_dir=str(tmp_path / "state"),
+            workspace_dir=str(tmp_path / "workspace"),
+        )
+        # Register a learning strategy that returns a valid proposal
+        orch.improvement.learning_strategies.append(
+            lambda cap_map, gaps: [
+                {
+                    "type": "test_improvement",
+                    "target": "learning",
+                    "meets_do_no_harm": True,
+                    "meets_human_alignment": True,
+                    "meets_transparency": True,
+                    "meets_reversibility": True,
+                }
+            ]
+        )
+        initial_history = len(orch.improvement.improvement_history)
+        orch._on_idle_triggered()
+        assert len(orch.improvement.improvement_history) > initial_history

@@ -53,7 +53,8 @@ class GatewayWatchdog:
     def _load_token_from_config(self) -> str:
         """Load the gateway token from ~/.openclaw/openclaw.json."""
         config = self._load_openclaw_config()
-        return config.get("gateway", {}).get("auth", {}).get("token", "")
+        token: str = config.get("gateway", {}).get("auth", {}).get("token", "")
+        return token
 
     def _load_port_from_config(self) -> int:
         """Load the gateway port from ~/.openclaw/openclaw.json."""
@@ -233,7 +234,8 @@ class GatewayWatchdog:
         try:
             with open(self._state_file, "r", encoding="utf-8") as f:
                 state = json.load(f)
-            return state.get("history", [])
+            history: List[Dict[str, Any]] = state.get("history", [])
+            return history
         except (OSError, json.JSONDecodeError):
             return []
 

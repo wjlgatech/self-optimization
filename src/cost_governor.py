@@ -13,9 +13,8 @@ Strategy:
 import json
 import logging
 import os
-import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ CHEAP_MODELS = {
 # Recommended defaults
 RECOMMENDED_BOOTSTRAP_MAX_CHARS = 8000
 RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS = 30000
-# OpenClaw valid compaction modes: "default" (compacts more eagerly) or "safeguard" (only near limit)
+# OpenClaw compaction modes: "default" (more eagerly) or "safeguard" (only near limit)
 RECOMMENDED_COMPACTION_MODE = "default"
 RECOMMENDED_HEARTBEAT_INTERVAL = "6h"
 
@@ -111,7 +110,7 @@ class CostGovernor:
 
     def _get_nested(self, *keys: str, default: Any = None) -> Any:
         """Safely traverse nested config keys."""
-        obj = self._config
+        obj: Any = self._config
         for k in keys:
             if isinstance(obj, dict):
                 obj = obj.get(k)
@@ -136,7 +135,8 @@ class CostGovernor:
                     with open(fpath, "r", encoding="utf-8") as f:
                         content = f.read()
                     chars = len(content)
-                    lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+                    has_trailing = content and not content.endswith("\n")
+                    lines = content.count("\n") + (1 if has_trailing else 0)
                     # Rough token estimate: ~4 chars per token for English
                     est_tokens = chars // 4
                     files.append({
@@ -310,9 +310,6 @@ class CostGovernor:
         # 5. Check heartbeat config
         heartbeat_model = self._get_nested(
             "agents", "defaults", "heartbeat", "model"
-        )
-        heartbeat_every = self._get_nested(
-            "agents", "defaults", "heartbeat", "every"
         )
         if heartbeat_model and heartbeat_model in EXPENSIVE_MODELS:
             findings.append({
@@ -591,7 +588,8 @@ class CostGovernor:
     def get_baselines(self) -> List[Dict[str, Any]]:
         """Return all recorded baselines."""
         state = self._load_state()
-        return state.get("baselines", [])
+        result: List[Dict[str, Any]] = state.get("baselines", [])
+        return result
 
     # --- Governor loop ---
 
@@ -606,7 +604,6 @@ class CostGovernor:
 
         # Load previous state for comparison
         state = self._load_state()
-        last_run = state.get("last_governor_run")
         baselines = state.get("baselines", [])
         initial_baseline = baselines[0] if baselines else None
 
@@ -615,13 +612,10 @@ class CostGovernor:
 
         # Check 1: Model cost drift
         if audit_result["current_model"] in EXPENSIVE_MODELS:
-            expensive_model_issue = True
             alerts.append(
                 f"Expensive model in use: {audit_result['current_model']} "
                 f"(${audit_result['model_cost_per_m_input']}/M input)"
             )
-        else:
-            expensive_model_issue = False
 
         # Check 2: Bootstrap bloat drift (compare to baseline if available)
         if initial_baseline:
