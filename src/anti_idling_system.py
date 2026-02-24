@@ -22,6 +22,7 @@ class AntiIdlingSystem:
         self._running = False
         self.activity_log: List[Dict[str, Any]] = []
         self.intervention_callbacks: List[Callable] = []
+        self.action_handlers: Dict[str, Callable] = {}
 
         # Configure logging
         logging.basicConfig(
@@ -73,6 +74,17 @@ class AntiIdlingSystem:
         idle_rate: float = 1 - (productive_time / total_time)
         return max(0.0, min(1.0, idle_rate))
 
+    def register_action_handler(self, action_name: str, handler: Callable) -> None:
+        """
+        Register a handler for a specific emergency action.
+
+        :param action_name: Name of the emergency action to handle
+        :param handler: Callable to invoke when the action is generated
+        """
+        if not callable(handler):
+            raise TypeError(f"handler must be callable, got {type(handler).__name__}")
+        self.action_handlers[action_name] = handler
+
     def register_intervention_callback(self, callback: Callable) -> None:
         """
         Register a callback function for idle state intervention
@@ -83,10 +95,13 @@ class AntiIdlingSystem:
             raise TypeError(f"callback must be callable, got {type(callback).__name__}")
         self.intervention_callbacks.append(callback)
 
-    def detect_and_interrupt_idle_state(self) -> None:
+    def detect_and_interrupt_idle_state(self) -> List[str]:
         """
-        Detect idle state and trigger interventions
+        Detect idle state and trigger interventions.
+
+        :return: List of action names that were executed via handlers
         """
+        executed: List[str] = []
         idle_rate = self.calculate_idle_rate()
 
         if idle_rate > self.idle_threshold:
@@ -102,9 +117,19 @@ class AntiIdlingSystem:
             # Generate emergency actions
             emergency_actions = self.generate_emergency_actions()
 
-            # Log and potentially execute emergency actions
+            # Dispatch through registered handlers, fall back to logging
             for action in emergency_actions:
-                self.logger.info(f"Emergency Action: {action}")
+                handler = self.action_handlers.get(action)
+                if handler:
+                    try:
+                        handler()
+                        executed.append(action)
+                    except Exception as e:
+                        self.logger.error(f"Action handler for {action} failed: {e}")
+                else:
+                    self.logger.info(f"Emergency Action (no handler): {action}")
+
+        return executed
 
     def generate_emergency_actions(self) -> List[str]:
         """

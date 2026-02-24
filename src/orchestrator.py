@@ -111,20 +111,42 @@ class SelfOptimizationOrchestrator:
         # Wire idle callback to improvement cycle
         self.anti_idling.register_intervention_callback(self._on_idle_triggered)
 
+        # Map emergency action names to concrete improvement proposals
+        action_to_proposal = {
+            "conduct_strategic_analysis": {
+                "type": "strategic_analysis",
+                "target": "problem_solving",
+            },
+            "explore_new_skill_development": {"type": "skill_development", "target": "learning"},
+            "start_research_sprint": {"type": "research_sprint", "target": "task_execution"},
+            "design_experimental_prototype": {
+                "type": "experimental_prototype",
+                "target": "learning",
+            },
+            "initiate_user_feedback_loop": {"type": "feedback_loop", "target": "communication"},
+        }
+        for action_name, proposal in action_to_proposal.items():
+            self.anti_idling.register_action_handler(
+                action_name,
+                lambda p=proposal: self.improvement.execute_improvement(p),
+            )
+
         # Restore persisted state
         self._restore_state()
 
     def idle_check(self) -> Dict[str, Any]:
         """Run an idle check: scan filesystem, assess idle rate, take action if needed.
 
-        Returns dict with: timestamp, idle_rate, triggered, actions_taken, activities_found.
+        Returns dict with: timestamp, idle_rate, triggered, actions_proposed,
+        actions_executed, activities_found.
         """
         now = datetime.now().isoformat()
         result: Dict[str, Any] = {
             "timestamp": now,
             "idle_rate": 0.0,
             "triggered": False,
-            "actions_taken": [],
+            "actions_proposed": [],
+            "actions_executed": [],
             "activities_found": 0,
         }
 
@@ -140,11 +162,13 @@ class SelfOptimizationOrchestrator:
         idle_rate = self.anti_idling.calculate_idle_rate(time_window=7200)
         result["idle_rate"] = idle_rate
 
-        # 4. Check if triggered
+        # 4. Check if triggered — dispatch actions through registered handlers
         if idle_rate > self.anti_idling.idle_threshold:
             result["triggered"] = True
             actions = self.anti_idling.generate_emergency_actions()
-            result["actions_taken"] = actions
+            result["actions_proposed"] = actions
+            executed = self.anti_idling.detect_and_interrupt_idle_state()
+            result["actions_executed"] = executed
 
             # Also generate an improvement proposal
             proposals = self.improvement.generate_improvement_proposals()
@@ -355,8 +379,14 @@ class SelfOptimizationOrchestrator:
         return {"tier": "none", "score": score, "reason": "Performance within acceptable range"}
 
     def _on_idle_triggered(self) -> None:
-        """Callback fired when idle state is detected."""
-        logger.warning("Idle state triggered for agent %s", self.agent_id)
+        """Callback fired when idle state is detected — runs an improvement cycle."""
+        logger.warning(
+            "Idle state triggered for agent %s — running improvement cycle",
+            self.agent_id,
+        )
+        proposals = self.improvement.generate_improvement_proposals()
+        if proposals:
+            self.improvement.execute_improvement(proposals[0])
 
     def _seed_capabilities_from_activities(self, activities: List[Dict[str, Any]]) -> None:
         """Seed capability_map from real activity data so gap analysis is meaningful.

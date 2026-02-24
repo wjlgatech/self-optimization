@@ -362,3 +362,84 @@ class TestRunPeriodicCheck:
         system._running = True
         system.stop()
         assert system._running is False
+
+
+# ── register_action_handler ──────────────────────────────────────────────
+
+
+class TestRegisterActionHandler:
+    def test_register_handler(self):
+        system = AntiIdlingSystem()
+        handler = MagicMock()
+        system.register_action_handler("conduct_strategic_analysis", handler)
+        assert "conduct_strategic_analysis" in system.action_handlers
+        assert system.action_handlers["conduct_strategic_analysis"] is handler
+
+    def test_register_non_callable_rejected(self):
+        system = AntiIdlingSystem()
+        with pytest.raises(TypeError):
+            system.register_action_handler("test", "not callable")
+
+    def test_overwrite_handler(self):
+        system = AntiIdlingSystem()
+        handler1 = MagicMock()
+        handler2 = MagicMock()
+        system.register_action_handler("action", handler1)
+        system.register_action_handler("action", handler2)
+        assert system.action_handlers["action"] is handler2
+
+
+# ── Action handler dispatch in detect_and_interrupt_idle_state ───────────
+
+
+class TestActionHandlerDispatch:
+    def test_handlers_called_when_idle(self):
+        """Registered action handlers are invoked when idle state triggers."""
+        system = AntiIdlingSystem(idle_threshold=0.01)
+        handler = MagicMock()
+        # Register handler for all known actions
+        for action in system.generate_emergency_actions():
+            system.register_action_handler(action, handler)
+        executed = system.detect_and_interrupt_idle_state()
+        assert handler.call_count == len(executed)
+        assert len(executed) > 0
+
+    def test_returns_executed_action_names(self):
+        """detect_and_interrupt_idle_state returns names of executed actions."""
+        system = AntiIdlingSystem(idle_threshold=0.01)
+        system.register_action_handler("conduct_strategic_analysis", MagicMock())
+        executed = system.detect_and_interrupt_idle_state()
+        assert "conduct_strategic_analysis" in executed
+
+    def test_returns_empty_when_not_idle(self):
+        """No actions executed when below idle threshold."""
+        system = AntiIdlingSystem(idle_threshold=1.0)
+        system.register_action_handler("conduct_strategic_analysis", MagicMock())
+        executed = system.detect_and_interrupt_idle_state()
+        assert executed == []
+
+    def test_handler_exception_does_not_block_others(self):
+        """A failing handler doesn't prevent other handlers from running."""
+        system = AntiIdlingSystem(idle_threshold=0.01)
+        failing = MagicMock(side_effect=RuntimeError("boom"))
+        success = MagicMock()
+        system.register_action_handler("start_research_sprint", failing)
+        system.register_action_handler("conduct_strategic_analysis", success)
+        executed = system.detect_and_interrupt_idle_state()
+        failing.assert_called_once()
+        success.assert_called_once()
+        # Failed action should NOT be in executed list
+        assert "start_research_sprint" not in executed
+        assert "conduct_strategic_analysis" in executed
+
+    def test_unhandled_actions_logged_not_executed(self):
+        """Actions without handlers are logged but not in executed list."""
+        system = AntiIdlingSystem(idle_threshold=0.01)
+        # Only register one handler
+        system.register_action_handler("conduct_strategic_analysis", MagicMock())
+        executed = system.detect_and_interrupt_idle_state()
+        # Only the handled action should appear
+        assert "conduct_strategic_analysis" in executed
+        # Unhandled ones should not
+        for action in executed:
+            assert action in system.action_handlers
