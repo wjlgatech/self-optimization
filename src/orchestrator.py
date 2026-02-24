@@ -15,6 +15,7 @@ from typing import Any
 from anti_idling_system import AntiIdlingSystem
 from config_loader import load_monitoring_config
 from filesystem_scanner import FilesystemScanner
+from gateway_watchdog import GatewayWatchdog
 from llm_provider import LLMProvider
 from multi_agent_performance import MultiAgentPerformanceOptimizer
 from recursive_self_improvement import RecursiveSelfImprovementProtocol
@@ -92,9 +93,10 @@ class SelfOptimizationOrchestrator:
         self.improvement = RecursiveSelfImprovementProtocol()
         self.verification = ResultsVerificationFramework()
 
-        # Scanner and LLM
+        # Scanner, LLM, and gateway watchdog
         self.scanner = FilesystemScanner(workspace_dir=workspace_dir)
         self.llm = LLMProvider()
+        self.watchdog = GatewayWatchdog(state_dir=state_dir)
 
         # Register all agents from config (or just the current one)
         self._agent_ids: dict[str, str] = {}  # agent_name -> internal perf ID
@@ -148,7 +150,22 @@ class SelfOptimizationOrchestrator:
             "actions_proposed": [],
             "actions_executed": [],
             "activities_found": 0,
+            "service_health": {},
         }
+
+        # 0. Check service health (gateway, enterprise, vite-ui)
+        service_health = self.watchdog.check_all_services()
+        result["service_health"] = service_health
+        down_services = [
+            name for name, h in service_health.items()
+            if not h["healthy"] and h.get("critical", False)
+        ]
+        if down_services:
+            logger.warning(
+                "Critical services DOWN: %s — attempting restart",
+                ", ".join(down_services),
+            )
+            result["services_down"] = down_services
 
         # 1. Scan real filesystem activity (last 2 hours)
         activities = self.scanner.scan_activity(hours=2)
@@ -317,8 +334,9 @@ class SelfOptimizationOrchestrator:
         self.anti_idling.log_activity(activity)
 
     def status(self) -> dict[str, Any]:
-        """Return current system status."""
+        """Return current system status including service health."""
         last_run = self.state.load("last_run", {})
+        service_health = self.watchdog.check_all_services()
         return {
             "agent_id": self.agent_id,
             "workspace_dir": self.workspace_dir,
@@ -331,6 +349,7 @@ class SelfOptimizationOrchestrator:
             "llm_available": self.llm.available,
             "last_run": last_run,
             "daemon_running": self._daemon_running,
+            "service_health": service_health,
             "config": {
                 "thresholds": self.config.get("thresholds", {}),
                 "monitoring_interval": self.config.get("monitoring_interval", ""),

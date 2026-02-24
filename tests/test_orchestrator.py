@@ -100,6 +100,7 @@ class TestIdleCheck:
         assert "actions_proposed" in result
         assert "actions_executed" in result
         assert "activities_found" in result
+        assert "service_health" in result
 
     def test_idle_check_detects_files(self, tmp_path):
         workspace = tmp_path / "workspace"
@@ -208,6 +209,21 @@ class TestStatus:
         assert "llm_available" in status
         assert "last_run" in status
         assert "daemon_running" in status
+        assert "service_health" in status
+
+    def test_status_includes_service_health(self, tmp_path):
+        orch = SelfOptimizationOrchestrator(
+            state_dir=str(tmp_path / "state"),
+            workspace_dir=str(tmp_path / "workspace"),
+        )
+        status = orch.status()
+        # Service health should include gateway, enterprise, and vite-ui
+        health = status["service_health"]
+        assert "gateway" in health
+        assert "enterprise" in health
+        for _name, h in health.items():
+            assert "healthy" in h
+            assert "port" in h
 
     def test_status_daemon_not_running(self, tmp_path):
         orch = SelfOptimizationOrchestrator(
