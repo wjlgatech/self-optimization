@@ -1,4 +1,4 @@
-from src.anti_idling_system import AntiIdlingSystem
+from anti_idling_system import AntiIdlingSystem
 
 
 class TestAntiIdlingSystem:

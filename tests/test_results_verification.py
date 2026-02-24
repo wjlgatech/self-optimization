@@ -1,4 +1,4 @@
-from src.results_verification import ResultsVerificationFramework
+from results_verification import ResultsVerificationFramework
 
 
 class TestResultsVerificationFramework:

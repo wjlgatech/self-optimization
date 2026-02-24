@@ -10,7 +10,7 @@ import re
 import subprocess
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +23,13 @@ class FilesystemScanner:
             workspace_dir = os.path.expanduser("~/.openclaw/workspace")
         self.workspace_dir = os.path.expanduser(workspace_dir)
 
-    def scan_activity(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def scan_activity(self, hours: int = 24) -> list[dict[str, Any]]:
         """Scan all sources for activity within the given time window.
 
         Returns list of activities with: type, path, timestamp, description,
         is_productive, duration (estimated).
         """
-        activities: List[Dict[str, Any]] = []
+        activities: list[dict[str, Any]] = []
 
         # 1. Git commits from workspace and known sub-repos
         for repo_path in self._find_git_repos():
@@ -62,7 +62,7 @@ class FilesystemScanner:
         activities.sort(key=lambda a: a.get("timestamp", 0), reverse=True)
         return activities
 
-    def get_recent_commits(self, repo_path: str, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_recent_commits(self, repo_path: str, hours: int = 24) -> list[dict[str, Any]]:
         """Get git commits from the given repo within the time window.
 
         Runs: git -C {repo_path} log --since="{hours} hours ago" --format="%H|%ai|%s"
@@ -91,7 +91,7 @@ class FilesystemScanner:
         if result.returncode != 0:
             return []
 
-        commits: List[Dict[str, Any]] = []
+        commits: list[dict[str, Any]] = []
         for line in result.stdout.strip().splitlines():
             parts = line.split("|", 2)
             if len(parts) < 3:
@@ -115,7 +115,7 @@ class FilesystemScanner:
             )
         return commits
 
-    def get_modified_files(self, directory: str, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_modified_files(self, directory: str, hours: int = 24) -> list[dict[str, Any]]:
         """Find files modified within the time window via os.walk + os.stat.
 
         Groups by parent directory to estimate work sessions.
@@ -124,7 +124,7 @@ class FilesystemScanner:
             return []
 
         cutoff = time.time() - (hours * 3600)
-        modified: List[Dict[str, Any]] = []
+        modified: list[dict[str, Any]] = []
 
         skip_dirs = {".git", "__pycache__", ".mypy_cache", ".pytest_cache", "node_modules", ".venv"}
 
@@ -153,12 +153,12 @@ class FilesystemScanner:
 
         return modified
 
-    def parse_daily_reflection(self, filepath: str) -> Dict[str, Any]:
+    def parse_daily_reflection(self, filepath: str) -> dict[str, Any]:
         """Parse a daily reflection markdown file into structured data.
 
         Extracts: achievements, challenges, priorities, and raw sections.
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "filepath": filepath,
             "achievements": [],
             "challenges": [],
@@ -172,14 +172,14 @@ class FilesystemScanner:
             return result
 
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 content = f.read()
         except OSError:
             return result
 
         # Parse sections
-        current_section: Optional[str] = None
-        section_lines: List[str] = []
+        current_section: str | None = None
+        section_lines: list[str] = []
 
         for line in content.splitlines():
             header_match = re.match(r"^#{1,3}\s+(.+)", line)
@@ -217,9 +217,9 @@ class FilesystemScanner:
 
         return result
 
-    def _extract_bullet_items(self, text: str) -> List[str]:
+    def _extract_bullet_items(self, text: str) -> list[str]:
         """Extract non-empty bullet items from markdown text."""
-        items: List[str] = []
+        items: list[str] = []
         for line in text.splitlines():
             match = re.match(r"^\s*[-*]\s+(.+)", line)
             if match:
@@ -229,9 +229,9 @@ class FilesystemScanner:
                     items.append(item)
         return items
 
-    def _find_git_repos(self) -> List[str]:
+    def _find_git_repos(self) -> list[str]:
         """Find git repositories in the workspace."""
-        repos: List[str] = []
+        repos: list[str] = []
         if os.path.isdir(os.path.join(self.workspace_dir, ".git")):
             repos.append(self.workspace_dir)
 
@@ -245,10 +245,10 @@ class FilesystemScanner:
                 pass
         return repos
 
-    def _scan_reflections(self, reflection_dir: str, hours: int) -> List[Dict[str, Any]]:
+    def _scan_reflections(self, reflection_dir: str, hours: int) -> list[dict[str, Any]]:
         """Scan reflection directory for recently modified reflections."""
         cutoff = time.time() - (hours * 3600)
-        activities: List[Dict[str, Any]] = []
+        activities: list[dict[str, Any]] = []
 
         if not os.path.isdir(reflection_dir):
             return activities

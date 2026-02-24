@@ -7,12 +7,12 @@ config file is missing or malformed.
 import logging
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Defaults matching the config.yaml schema
-DEFAULT_CONFIG: Dict[str, Any] = {
+DEFAULT_CONFIG: dict[str, Any] = {
     "agents": ["loopy-0"],
     "monitoring_interval": "1h",
     "thresholds": {
@@ -38,7 +38,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 # Agent name normalization: config.yaml uses "loopy"/"loopy1",
 # the system uses "loopy-0"/"loopy-1"
-_AGENT_NAME_MAP: Dict[str, str] = {
+_AGENT_NAME_MAP: dict[str, str] = {
     "loopy": "loopy-0",
     "loopy1": "loopy-1",
 }
@@ -50,19 +50,17 @@ def _normalize_agent_name(name: str) -> str:
     return _AGENT_NAME_MAP.get(name, name)
 
 
-def _extract_agents_from_text(text: str) -> List[str]:
+def _extract_agents_from_text(text: str) -> list[str]:
     """Extract agent names from raw YAML text using regex."""
     agents_block = re.search(r"agents:\s*\n((?:\s+-\s+\S+\n?)+)", text)
     if not agents_block:
         return []
-    return [
-        _normalize_agent_name(m) for m in re.findall(r"-\s+(\S+)", agents_block.group(1))
-    ]
+    return [_normalize_agent_name(m) for m in re.findall(r"-\s+(\S+)", agents_block.group(1))]
 
 
-def _extract_thresholds_from_text(text: str) -> Dict[str, Dict[str, float]]:
+def _extract_thresholds_from_text(text: str) -> dict[str, dict[str, float]]:
     """Extract threshold values from raw YAML text using regex."""
-    thresholds: Dict[str, Dict[str, float]] = {}
+    thresholds: dict[str, dict[str, float]] = {}
 
     for metric in ("goal_completion_rate", "task_efficiency"):
         block_match = re.search(rf"{metric}:\s*\n((?:\s+\w+:\s+[\d.]+\n?)+)", text)
@@ -71,20 +69,16 @@ def _extract_thresholds_from_text(text: str) -> Dict[str, Dict[str, float]]:
             warning_m = re.search(r"warning_level:\s+([\d.]+)", block)
             critical_m = re.search(r"critical_level:\s+([\d.]+)", block)
             default_t = DEFAULT_CONFIG["thresholds"].get(metric, {})
-            warn_val = (
-                float(warning_m.group(1)) if warning_m else default_t.get("warning", 0.7)
-            )
-            crit_val = (
-                float(critical_m.group(1)) if critical_m else default_t.get("critical", 0.5)
-            )
+            warn_val = float(warning_m.group(1)) if warning_m else default_t.get("warning", 0.7)
+            crit_val = float(critical_m.group(1)) if critical_m else default_t.get("critical", 0.5)
             thresholds[metric] = {"warning": warn_val, "critical": crit_val}
 
     return thresholds
 
 
-def _extract_intervention_tiers_from_text(text: str) -> Dict[str, Dict[str, Any]]:
+def _extract_intervention_tiers_from_text(text: str) -> dict[str, dict[str, Any]]:
     """Extract intervention tiers from raw YAML text."""
-    tiers: Dict[str, Dict[str, Any]] = {}
+    tiers: dict[str, dict[str, Any]] = {}
 
     for tier_name in ("tier1", "tier2", "tier3"):
         tier_match = re.search(
@@ -99,7 +93,7 @@ def _extract_intervention_tiers_from_text(text: str) -> Dict[str, Dict[str, Any]
     return tiers
 
 
-def _extract_notification_channels(text: str) -> List[str]:
+def _extract_notification_channels(text: str) -> list[str]:
     """Extract notification channels from raw YAML text."""
     block_match = re.search(r"notification_channels:\s*\n((?:\s+-\s+\S+\n?)+)", text)
     if not block_match:
@@ -122,7 +116,7 @@ def _deep_copy_config(obj: Any) -> Any:
     return obj
 
 
-def load_monitoring_config(config_path: str = "") -> Dict[str, Any]:
+def load_monitoring_config(config_path: str = "") -> dict[str, Any]:
     """Load and normalize the monitoring config.
 
     Args:
@@ -139,18 +133,18 @@ def load_monitoring_config(config_path: str = "") -> Dict[str, Any]:
 
     if not os.path.isfile(config_path):
         logger.info("Config not found at %s, using defaults", config_path)
-        result: Dict[str, Any] = _deep_copy_config(DEFAULT_CONFIG)
+        result: dict[str, Any] = _deep_copy_config(DEFAULT_CONFIG)
         return result
 
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             text = f.read()
     except OSError as e:
         logger.warning("Failed to read config: %s", e)
-        fallback: Dict[str, Any] = _deep_copy_config(DEFAULT_CONFIG)
+        fallback: dict[str, Any] = _deep_copy_config(DEFAULT_CONFIG)
         return fallback
 
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
 
     # Agents
     agents = _extract_agents_from_text(text)

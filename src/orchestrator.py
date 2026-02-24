@@ -10,7 +10,7 @@ import os
 import signal
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 from anti_idling_system import AntiIdlingSystem
 from config_loader import load_monitoring_config
@@ -44,7 +44,7 @@ class StateManager:
         if not os.path.isfile(filepath):
             return default
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Failed to load state %s: %s", key, e)
@@ -97,7 +97,7 @@ class SelfOptimizationOrchestrator:
         self.llm = LLMProvider()
 
         # Register all agents from config (or just the current one)
-        self._agent_ids: Dict[str, str] = {}  # agent_name -> internal perf ID
+        self._agent_ids: dict[str, str] = {}  # agent_name -> internal perf ID
         config_agents = self.config.get("agents", [])
         if agent_id not in config_agents:
             config_agents = [agent_id] + config_agents
@@ -134,14 +134,14 @@ class SelfOptimizationOrchestrator:
         # Restore persisted state
         self._restore_state()
 
-    def idle_check(self) -> Dict[str, Any]:
+    def idle_check(self) -> dict[str, Any]:
         """Run an idle check: scan filesystem, assess idle rate, take action if needed.
 
         Returns dict with: timestamp, idle_rate, triggered, actions_proposed,
         actions_executed, activities_found.
         """
         now = datetime.now().isoformat()
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "timestamp": now,
             "idle_rate": 0.0,
             "triggered": False,
@@ -188,7 +188,7 @@ class SelfOptimizationOrchestrator:
         )
         return result
 
-    def daily_review(self) -> Dict[str, Any]:
+    def daily_review(self) -> dict[str, Any]:
         """Run a full daily review: scan, analyze, reflect, improve.
 
         Returns comprehensive review dict.
@@ -196,7 +196,7 @@ class SelfOptimizationOrchestrator:
         now = datetime.now().isoformat()
         today = datetime.now().strftime("%Y-%m-%d")
 
-        review: Dict[str, Any] = {
+        review: dict[str, Any] = {
             "timestamp": now,
             "date": today,
             "activities_found": 0,
@@ -312,11 +312,11 @@ class SelfOptimizationOrchestrator:
         """Stop the daemon loop."""
         self._daemon_running = False
 
-    def log_activity(self, activity: Dict[str, Any]) -> None:
+    def log_activity(self, activity: dict[str, Any]) -> None:
         """External API for bots to log activities explicitly."""
         self.anti_idling.log_activity(activity)
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Return current system status."""
         last_run = self.state.load("last_run", {})
         return {
@@ -337,7 +337,7 @@ class SelfOptimizationOrchestrator:
             },
         }
 
-    def get_intervention_tier(self, agent_name: str = "") -> Dict[str, Any]:
+    def get_intervention_tier(self, agent_name: str = "") -> dict[str, Any]:
         """Determine intervention tier for an agent based on config thresholds.
 
         Returns: {tier, actions, reason} or {tier: "none"} if performance is OK.
@@ -388,7 +388,7 @@ class SelfOptimizationOrchestrator:
         if proposals:
             self.improvement.execute_improvement(proposals[0])
 
-    def _seed_capabilities_from_activities(self, activities: List[Dict[str, Any]]) -> None:
+    def _seed_capabilities_from_activities(self, activities: list[dict[str, Any]]) -> None:
         """Seed capability_map from real activity data so gap analysis is meaningful.
 
         Maps activity types to capabilities:
@@ -401,8 +401,8 @@ class SelfOptimizationOrchestrator:
         now_iso = datetime.now().isoformat()
 
         # Count activities by type
-        type_counts: Dict[str, int] = {}
-        commit_subjects: List[str] = []
+        type_counts: dict[str, int] = {}
+        commit_subjects: list[str] = []
         for a in activities:
             atype = a.get("type", "unknown")
             type_counts[atype] = type_counts.get(atype, 0) + 1
@@ -490,7 +490,7 @@ class SelfOptimizationOrchestrator:
                     ),
                 }
 
-    def _load_previous_performance(self) -> Dict[str, Any]:
+    def _load_previous_performance(self) -> dict[str, Any]:
         """Load the most recent previous performance entry for trend comparison.
 
         Returns dict with score and perf_data, or empty dict if none found.
@@ -511,8 +511,8 @@ class SelfOptimizationOrchestrator:
     def _write_reflection(
         self,
         date: str,
-        review: Dict[str, Any],
-        activities: List[Dict[str, Any]],
+        review: dict[str, Any],
+        activities: list[dict[str, Any]],
     ) -> str:
         """Write a detailed daily reflection markdown file with real data."""
         reflection_dir = os.path.join(self.workspace_dir, "memory", "daily-reflections")
@@ -520,9 +520,9 @@ class SelfOptimizationOrchestrator:
         filepath = os.path.join(reflection_dir, f"{date}-reflection.md")
 
         # ── Analyze activities ──────────────────────────────────────────
-        type_counts: Dict[str, int] = {}
-        commits_by_repo: Dict[str, List[str]] = {}
-        all_commits: List[str] = []
+        type_counts: dict[str, int] = {}
+        commits_by_repo: dict[str, list[str]] = {}
+        all_commits: list[str] = []
         for a in activities:
             atype = a.get("type", "unknown")
             type_counts[atype] = type_counts.get(atype, 0) + 1
@@ -545,7 +545,7 @@ class SelfOptimizationOrchestrator:
         previous = review.get("previous_perf", {})
 
         # ── Build markdown ──────────────────────────────────────────────
-        lines: List[str] = [f"# Daily Reflection - {date}", ""]
+        lines: list[str] = [f"# Daily Reflection - {date}", ""]
 
         # Activity Summary with git detail
         lines.extend(["## Activity Summary", f"- **Total activities**: {len(activities)}"])
@@ -593,7 +593,7 @@ class SelfOptimizationOrchestrator:
             )
             prev_data = previous.get("perf_data", {})
             if prev_data:
-                changes: List[str] = []
+                changes: list[str] = []
                 for metric in ("accuracy", "efficiency", "adaptability"):
                     old_val = prev_data.get(metric, 0.0)
                     new_val = perf_data.get(metric, 0.0)
@@ -631,7 +631,7 @@ class SelfOptimizationOrchestrator:
             )
 
         # Challenges — identify weak areas from performance data
-        challenges: List[str] = []
+        challenges: list[str] = []
         if accuracy < 0.5:
             unproductive = len(activities) - int(accuracy * len(activities))
             challenges.append(
@@ -714,7 +714,7 @@ class SelfOptimizationOrchestrator:
                 lines.extend(["", "## AI Reflection", llm_narrative])
 
         # Data-derived priorities
-        priorities: List[str] = []
+        priorities: list[str] = []
         if challenges:
             # Prioritize the biggest weakness
             if accuracy < efficiency and accuracy < adaptability:

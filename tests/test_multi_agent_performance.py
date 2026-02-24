@@ -1,4 +1,4 @@
-from src.multi_agent_performance import MultiAgentPerformanceOptimizer
+from multi_agent_performance import MultiAgentPerformanceOptimizer
 
 
 class TestMultiAgentPerformanceOptimizer:
@@ -64,7 +64,7 @@ class TestMultiAgentPerformanceOptimizer:
             {"accuracy": 0.45, "efficiency": 0.40, "adaptability": 0.35},
         ]
 
-        for agent_details, perf_data in zip(agents, performance_data):
+        for agent_details, perf_data in zip(agents, performance_data, strict=True):
             agent_id = self.optimizer.register_agent(agent_details)
             self.optimizer.update_agent_performance(agent_id, perf_data)
 
@@ -87,7 +87,7 @@ class TestMultiAgentPerformanceOptimizer:
             {"accuracy": 0.55, "efficiency": 0.50, "adaptability": 0.45},
         ]
 
-        for agent_details, perf_data in zip(agents, performance_data):
+        for agent_details, perf_data in zip(agents, performance_data, strict=True):
             agent_id = self.optimizer.register_agent(agent_details)
             self.optimizer.update_agent_performance(agent_id, perf_data)
 

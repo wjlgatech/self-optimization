@@ -14,12 +14,12 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # --- Model cost tiers ($/1M input tokens, approximate) ---
-MODEL_COSTS: Dict[str, Dict[str, float]] = {
+MODEL_COSTS: dict[str, dict[str, float]] = {
     # Expensive tier ($10-15/M input)
     "claude-opus-4-6": {"input": 15.0, "output": 75.0},
     "anthropic/claude-opus-4-6": {"input": 15.0, "output": 75.0},
@@ -42,15 +42,9 @@ MODEL_COSTS: Dict[str, Dict[str, float]] = {
     "ollama/deepseek-r1": {"input": 0.0, "output": 0.0},
 }
 
-EXPENSIVE_MODELS = {
-    m for m, c in MODEL_COSTS.items() if c["input"] >= 10.0
-}
-MID_TIER_MODELS = {
-    m for m, c in MODEL_COSTS.items() if 0.1 <= c["input"] < 10.0
-}
-CHEAP_MODELS = {
-    m for m, c in MODEL_COSTS.items() if c["input"] < 0.1
-}
+EXPENSIVE_MODELS = {m for m, c in MODEL_COSTS.items() if c["input"] >= 10.0}
+MID_TIER_MODELS = {m for m, c in MODEL_COSTS.items() if 0.1 <= c["input"] < 10.0}
+CHEAP_MODELS = {m for m, c in MODEL_COSTS.items() if c["input"] < 0.1}
 
 # Recommended defaults
 RECOMMENDED_BOOTSTRAP_MAX_CHARS = 8000
@@ -65,8 +59,14 @@ DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150000
 
 # Bootstrap files that get auto-injected
 BOOTSTRAP_FILES = [
-    "AGENTS.md", "SOUL.md", "TOOLS.md", "IDENTITY.md",
-    "USER.md", "HEARTBEAT.md", "MEMORY.md", "BOOTSTRAP.md",
+    "AGENTS.md",
+    "SOUL.md",
+    "TOOLS.md",
+    "IDENTITY.md",
+    "USER.md",
+    "HEARTBEAT.md",
+    "MEMORY.md",
+    "BOOTSTRAP.md",
     "TASKLOG.md",
 ]
 
@@ -85,9 +85,7 @@ class CostGovernor:
         if not workspace_dir:
             workspace_dir = os.path.expanduser("~/.openclaw/workspace")
         if not state_dir:
-            state_dir = os.path.expanduser(
-                "~/.openclaw/workspace/self-optimization/state"
-            )
+            state_dir = os.path.expanduser("~/.openclaw/workspace/self-optimization/state")
 
         self.config_path = config_path
         self.workspace_dir = workspace_dir
@@ -99,10 +97,10 @@ class CostGovernor:
 
     # --- Config loading ---
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load ~/.openclaw/openclaw.json."""
         try:
-            with open(self.config_path, "r", encoding="utf-8") as f:
+            with open(self.config_path, encoding="utf-8") as f:
                 return json.load(f)  # type: ignore[no-any-return]
         except (OSError, json.JSONDecodeError) as e:
             logger.warning("Could not load openclaw config: %s", e)
@@ -122,9 +120,9 @@ class CostGovernor:
 
     # --- Bootstrap file analysis ---
 
-    def measure_bootstrap_files(self) -> Dict[str, Any]:
+    def measure_bootstrap_files(self) -> dict[str, Any]:
         """Measure size of all auto-injected bootstrap/workspace files."""
-        files: List[Dict[str, Any]] = []
+        files: list[dict[str, Any]] = []
         total_chars = 0
         total_lines = 0
 
@@ -132,20 +130,22 @@ class CostGovernor:
             fpath = os.path.join(self.workspace_dir, fname)
             if os.path.isfile(fpath):
                 try:
-                    with open(fpath, "r", encoding="utf-8") as f:
+                    with open(fpath, encoding="utf-8") as f:
                         content = f.read()
                     chars = len(content)
                     has_trailing = content and not content.endswith("\n")
                     lines = content.count("\n") + (1 if has_trailing else 0)
                     # Rough token estimate: ~4 chars per token for English
                     est_tokens = chars // 4
-                    files.append({
-                        "file": fname,
-                        "chars": chars,
-                        "lines": lines,
-                        "est_tokens": est_tokens,
-                        "path": fpath,
-                    })
+                    files.append(
+                        {
+                            "file": fname,
+                            "chars": chars,
+                            "lines": lines,
+                            "est_tokens": est_tokens,
+                            "path": fpath,
+                        }
+                    )
                     total_chars += chars
                     total_lines += lines
                 except OSError:
@@ -155,11 +155,15 @@ class CostGovernor:
         files.sort(key=lambda f: f["chars"], reverse=True)
 
         bootstrap_max = self._get_nested(
-            "agents", "defaults", "bootstrapMaxChars",
+            "agents",
+            "defaults",
+            "bootstrapMaxChars",
             default=DEFAULT_BOOTSTRAP_MAX_CHARS,
         )
         bootstrap_total_max = self._get_nested(
-            "agents", "defaults", "bootstrapTotalMaxChars",
+            "agents",
+            "defaults",
+            "bootstrapTotalMaxChars",
             default=DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
         )
 
@@ -176,207 +180,245 @@ class CostGovernor:
 
     # --- Core audit ---
 
-    def audit(self) -> Dict[str, Any]:
+    def audit(self) -> dict[str, Any]:
         """Analyze current config for cost waste.
 
         Returns findings (issues found), recommendations (what to change),
         and estimated savings potential.
         """
-        findings: List[Dict[str, Any]] = []
-        recommendations: List[Dict[str, Any]] = []
+        findings: list[dict[str, Any]] = []
+        recommendations: list[dict[str, Any]] = []
 
         # 1. Check current model
         current_model = self._detect_current_model()
         model_cost = MODEL_COSTS.get(current_model, {})
         if current_model in EXPENSIVE_MODELS:
-            findings.append({
-                "id": "expensive_model",
-                "severity": "critical",
-                "title": "Default model is expensive tier",
-                "detail": (
-                    f"Current model: {current_model} "
-                    f"(${model_cost.get('input', '?')}/M input, "
-                    f"${model_cost.get('output', '?')}/M output)"
-                ),
-            })
-            recommendations.append({
-                "id": "switch_default_model",
-                "impact": "high",
-                "title": "Switch default model to cheap/local",
-                "detail": (
-                    "Route 80-95% of turns to a cheap model. "
-                    "Set agents.defaults.model.primary to 'ollama/llama3.3' "
-                    "(free) or 'claude-haiku-4-5' ($0.80/M). "
-                    "Escalate to expensive model only for complex tasks."
-                ),
-                "savings_pct": 80,
-                "config_patch": {
-                    "agents.defaults.model.primary": "claude-haiku-4-5",
-                },
-            })
+            findings.append(
+                {
+                    "id": "expensive_model",
+                    "severity": "critical",
+                    "title": "Default model is expensive tier",
+                    "detail": (
+                        f"Current model: {current_model} "
+                        f"(${model_cost.get('input', '?')}/M input, "
+                        f"${model_cost.get('output', '?')}/M output)"
+                    ),
+                }
+            )
+            recommendations.append(
+                {
+                    "id": "switch_default_model",
+                    "impact": "high",
+                    "title": "Switch default model to cheap/local",
+                    "detail": (
+                        "Route 80-95% of turns to a cheap model. "
+                        "Set agents.defaults.model.primary to 'ollama/llama3.3' "
+                        "(free) or 'claude-haiku-4-5' ($0.80/M). "
+                        "Escalate to expensive model only for complex tasks."
+                    ),
+                    "savings_pct": 80,
+                    "config_patch": {
+                        "agents.defaults.model.primary": "claude-haiku-4-5",
+                    },
+                }
+            )
         elif current_model in MID_TIER_MODELS:
-            findings.append({
-                "id": "mid_tier_model",
-                "severity": "info",
-                "title": "Default model is mid-tier",
-                "detail": f"Current model: {current_model} — reasonable, but local is free.",
-            })
+            findings.append(
+                {
+                    "id": "mid_tier_model",
+                    "severity": "info",
+                    "title": "Default model is mid-tier",
+                    "detail": f"Current model: {current_model} — reasonable, but local is free.",
+                }
+            )
 
         # 2. Check bootstrap file bloat
         bootstrap = self.measure_bootstrap_files()
         if bootstrap["total_chars"] > RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:
-            findings.append({
-                "id": "bootstrap_bloat",
-                "severity": "warning",
-                "title": "Bootstrap files exceed recommended size",
-                "detail": (
-                    f"Total: {bootstrap['total_chars']:,} chars "
-                    f"(~{bootstrap['total_est_tokens']:,} tokens) — "
-                    f"re-sent every turn. "
-                    f"Recommended: <{RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:,} chars."
-                ),
-            })
+            findings.append(
+                {
+                    "id": "bootstrap_bloat",
+                    "severity": "warning",
+                    "title": "Bootstrap files exceed recommended size",
+                    "detail": (
+                        f"Total: {bootstrap['total_chars']:,} chars "
+                        f"(~{bootstrap['total_est_tokens']:,} tokens) — "
+                        f"re-sent every turn. "
+                        f"Recommended: <{RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:,} chars."
+                    ),
+                }
+            )
             # Find the biggest offenders
             big_files = [f for f in bootstrap["files"] if f["chars"] > 3000]
             if big_files:
                 names = ", ".join(f["file"] for f in big_files[:3])
-                recommendations.append({
-                    "id": "shrink_bootstrap",
-                    "impact": "medium",
-                    "title": "Put bootstrap files on a token diet",
-                    "detail": (
-                        f"Biggest files: {names}. "
-                        "Move long policies/docs to on-demand memory/*.md files. "
-                        "Keep AGENTS.md to 1-2 pages of operating rules."
-                    ),
-                    "savings_pct": 20,
-                    "config_patch": {
-                        "agents.defaults.bootstrapMaxChars": RECOMMENDED_BOOTSTRAP_MAX_CHARS,
-                    },
-                })
+                recommendations.append(
+                    {
+                        "id": "shrink_bootstrap",
+                        "impact": "medium",
+                        "title": "Put bootstrap files on a token diet",
+                        "detail": (
+                            f"Biggest files: {names}. "
+                            "Move long policies/docs to on-demand memory/*.md files. "
+                            "Keep AGENTS.md to 1-2 pages of operating rules."
+                        ),
+                        "savings_pct": 20,
+                        "config_patch": {
+                            "agents.defaults.bootstrapMaxChars": RECOMMENDED_BOOTSTRAP_MAX_CHARS,
+                        },
+                    }
+                )
 
         # 3. Check bootstrap caps
         current_max = self._get_nested(
-            "agents", "defaults", "bootstrapMaxChars",
+            "agents",
+            "defaults",
+            "bootstrapMaxChars",
             default=DEFAULT_BOOTSTRAP_MAX_CHARS,
         )
         current_total_max = self._get_nested(
-            "agents", "defaults", "bootstrapTotalMaxChars",
+            "agents",
+            "defaults",
+            "bootstrapTotalMaxChars",
             default=DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
         )
         if current_total_max > RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:
-            findings.append({
-                "id": "high_bootstrap_cap",
-                "severity": "warning",
-                "title": "Bootstrap caps are too generous",
-                "detail": (
-                    f"bootstrapMaxChars={current_max:,}, "
-                    f"bootstrapTotalMaxChars={current_total_max:,}. "
-                    f"Recommended: {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,} / "
-                    f"{RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:,}."
-                ),
-            })
+            findings.append(
+                {
+                    "id": "high_bootstrap_cap",
+                    "severity": "warning",
+                    "title": "Bootstrap caps are too generous",
+                    "detail": (
+                        f"bootstrapMaxChars={current_max:,}, "
+                        f"bootstrapTotalMaxChars={current_total_max:,}. "
+                        f"Recommended: {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,} / "
+                        f"{RECOMMENDED_BOOTSTRAP_TOTAL_MAX_CHARS:,}."
+                    ),
+                }
+            )
 
         # 4. Check compaction mode
         compaction_mode = self._get_nested(
-            "agents", "defaults", "compaction", "mode",
+            "agents",
+            "defaults",
+            "compaction",
+            "mode",
             default="safeguard",
         )
         if compaction_mode == "safeguard":
-            findings.append({
-                "id": "weak_compaction",
-                "severity": "warning",
-                "title": f"Compaction mode is '{compaction_mode}' (not default)",
-                "detail": (
-                    "'default' compaction summarizes earlier conversation "
-                    "more eagerly, preventing token growth. "
-                    "'safeguard' only triggers near the context limit."
-                ),
-            })
-            recommendations.append({
-                "id": "aggressive_compaction",
-                "impact": "medium",
-                "title": "Switch compaction to default",
-                "detail": (
-                    "Set agents.defaults.compaction.mode to 'default'. "
-                    "Compacts earlier, keeping tokens/turn stable over time."
-                ),
-                "savings_pct": 30,
-                "config_patch": {
-                    "agents.defaults.compaction.mode": "default",
-                },
-            })
+            findings.append(
+                {
+                    "id": "weak_compaction",
+                    "severity": "warning",
+                    "title": f"Compaction mode is '{compaction_mode}' (not default)",
+                    "detail": (
+                        "'default' compaction summarizes earlier conversation "
+                        "more eagerly, preventing token growth. "
+                        "'safeguard' only triggers near the context limit."
+                    ),
+                }
+            )
+            recommendations.append(
+                {
+                    "id": "aggressive_compaction",
+                    "impact": "medium",
+                    "title": "Switch compaction to default",
+                    "detail": (
+                        "Set agents.defaults.compaction.mode to 'default'. "
+                        "Compacts earlier, keeping tokens/turn stable over time."
+                    ),
+                    "savings_pct": 30,
+                    "config_patch": {
+                        "agents.defaults.compaction.mode": "default",
+                    },
+                }
+            )
 
         # 5. Check heartbeat config
-        heartbeat_model = self._get_nested(
-            "agents", "defaults", "heartbeat", "model"
-        )
+        heartbeat_model = self._get_nested("agents", "defaults", "heartbeat", "model")
         if heartbeat_model and heartbeat_model in EXPENSIVE_MODELS:
-            findings.append({
-                "id": "expensive_heartbeat",
-                "severity": "warning",
-                "title": "Heartbeat uses expensive model",
-                "detail": (
-                    f"Heartbeat model: {heartbeat_model}. "
-                    "Heartbeats are full agent turns — should use cheapest model."
-                ),
-            })
-            recommendations.append({
-                "id": "cheap_heartbeat",
-                "impact": "medium",
-                "title": "Switch heartbeat to cheap model",
-                "detail": (
-                    "Set agents.defaults.heartbeat.model to a mini model. "
-                    "Heartbeats don't need genius-level reasoning."
-                ),
-                "savings_pct": 15,
-                "config_patch": {
-                    "agents.defaults.heartbeat.model": "claude-haiku-4-5",
-                },
-            })
+            findings.append(
+                {
+                    "id": "expensive_heartbeat",
+                    "severity": "warning",
+                    "title": "Heartbeat uses expensive model",
+                    "detail": (
+                        f"Heartbeat model: {heartbeat_model}. "
+                        "Heartbeats are full agent turns — should use cheapest model."
+                    ),
+                }
+            )
+            recommendations.append(
+                {
+                    "id": "cheap_heartbeat",
+                    "impact": "medium",
+                    "title": "Switch heartbeat to cheap model",
+                    "detail": (
+                        "Set agents.defaults.heartbeat.model to a mini model. "
+                        "Heartbeats don't need genius-level reasoning."
+                    ),
+                    "savings_pct": 15,
+                    "config_patch": {
+                        "agents.defaults.heartbeat.model": "claude-haiku-4-5",
+                    },
+                }
+            )
         # If no heartbeat model is explicitly set, the primary is used
         elif heartbeat_model is None and current_model in EXPENSIVE_MODELS:
-            findings.append({
-                "id": "heartbeat_inherits_expensive",
-                "severity": "warning",
-                "title": "Heartbeat inherits expensive primary model",
-                "detail": (
-                    f"No heartbeat.model set — inherits '{current_model}'. "
-                    "Each heartbeat turn costs as much as a real user turn."
-                ),
-            })
-            recommendations.append({
-                "id": "set_heartbeat_model",
-                "impact": "medium",
-                "title": "Set explicit cheap heartbeat model",
-                "detail": (
-                    "Set agents.defaults.heartbeat.model to 'claude-haiku-4-5' "
-                    "or 'gpt-4o-mini'. Heartbeats check inbox/calendar — trivial work."
-                ),
-                "savings_pct": 15,
-                "config_patch": {
-                    "agents.defaults.heartbeat.model": "claude-haiku-4-5",
-                },
-            })
+            findings.append(
+                {
+                    "id": "heartbeat_inherits_expensive",
+                    "severity": "warning",
+                    "title": "Heartbeat inherits expensive primary model",
+                    "detail": (
+                        f"No heartbeat.model set — inherits '{current_model}'. "
+                        "Each heartbeat turn costs as much as a real user turn."
+                    ),
+                }
+            )
+            recommendations.append(
+                {
+                    "id": "set_heartbeat_model",
+                    "impact": "medium",
+                    "title": "Set explicit cheap heartbeat model",
+                    "detail": (
+                        "Set agents.defaults.heartbeat.model to 'claude-haiku-4-5' "
+                        "or 'gpt-4o-mini'. Heartbeats check inbox/calendar — trivial work."
+                    ),
+                    "savings_pct": 15,
+                    "config_patch": {
+                        "agents.defaults.heartbeat.model": "claude-haiku-4-5",
+                    },
+                }
+            )
 
         # 6. Check concurrent agents (more agents = more cost)
         max_concurrent = self._get_nested(
-            "agents", "defaults", "maxConcurrent", default=1,
+            "agents",
+            "defaults",
+            "maxConcurrent",
+            default=1,
         )
         max_subagents = self._get_nested(
-            "agents", "defaults", "subagents", "maxConcurrent", default=1,
+            "agents",
+            "defaults",
+            "subagents",
+            "maxConcurrent",
+            default=1,
         )
         if max_concurrent > 2 or max_subagents > 4:
-            findings.append({
-                "id": "high_concurrency",
-                "severity": "info",
-                "title": "High agent concurrency may multiply costs",
-                "detail": (
-                    f"maxConcurrent={max_concurrent}, "
-                    f"subagents.maxConcurrent={max_subagents}. "
-                    "Each concurrent agent burns tokens independently."
-                ),
-            })
+            findings.append(
+                {
+                    "id": "high_concurrency",
+                    "severity": "info",
+                    "title": "High agent concurrency may multiply costs",
+                    "detail": (
+                        f"maxConcurrent={max_concurrent}, "
+                        f"subagents.maxConcurrent={max_subagents}. "
+                        "Each concurrent agent burns tokens independently."
+                    ),
+                }
+            )
 
         # Calculate overall estimated savings
         total_savings = _estimate_total_savings(recommendations)
@@ -422,9 +464,7 @@ class CostGovernor:
 
     # --- Config optimization ---
 
-    def generate_optimized_config(
-        self, strategy: str = "balanced"
-    ) -> Dict[str, Any]:
+    def generate_optimized_config(self, strategy: str = "balanced") -> dict[str, Any]:
         """Generate an optimized openclaw.json patch.
 
         Strategies:
@@ -433,8 +473,8 @@ class CostGovernor:
           - "conservative": minimal changes (keep current model, just trim waste)
         """
         audit_result = self.audit()
-        patch: Dict[str, Any] = {}
-        explanations: List[str] = []
+        patch: dict[str, Any] = {}
+        explanations: list[str] = []
 
         if strategy == "aggressive":
             patch = {
@@ -496,11 +536,13 @@ class CostGovernor:
                 explanations.append(
                     "Heartbeat model → Haiku (stops burning Opus tokens on inbox checks)"
                 )
-            explanations.extend([
-                "Compaction → default (compacts earlier than safeguard)",
-                f"Bootstrap cap → {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,} chars per file",
-                "Primary model unchanged — only trimming waste",
-            ])
+            explanations.extend(
+                [
+                    "Compaction → default (compacts earlier than safeguard)",
+                    f"Bootstrap cap → {RECOMMENDED_BOOTSTRAP_MAX_CHARS:,} chars per file",
+                    "Primary model unchanged — only trimming waste",
+                ]
+            )
 
         return {
             "strategy": strategy,
@@ -510,9 +552,7 @@ class CostGovernor:
             "estimated_savings_pct": audit_result["estimated_savings_pct"],
         }
 
-    def apply_config(
-        self, patch: Dict[str, Any], backup: bool = True
-    ) -> Dict[str, Any]:
+    def apply_config(self, patch: dict[str, Any], backup: bool = True) -> dict[str, Any]:
         """Apply a config patch to openclaw.json.
 
         Deep-merges the patch into the existing config. Creates a backup first.
@@ -520,7 +560,7 @@ class CostGovernor:
         if backup:
             backup_path = self.config_path + ".pre-governor.bak"
             try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
+                with open(self.config_path, encoding="utf-8") as f:
                     original = f.read()
                 with open(backup_path, "w", encoding="utf-8") as f:
                     f.write(original)
@@ -552,7 +592,7 @@ class CostGovernor:
 
     # --- Baseline tracking ---
 
-    def record_baseline(self, label: str = "manual") -> Dict[str, Any]:
+    def record_baseline(self, label: str = "manual") -> dict[str, Any]:
         """Capture current state as a baseline for future comparison."""
         audit_result = self.audit()
         baseline = {
@@ -566,11 +606,15 @@ class CostGovernor:
                 "agents", "defaults", "compaction", "mode", default="safeguard"
             ),
             "bootstrap_max_chars": self._get_nested(
-                "agents", "defaults", "bootstrapMaxChars",
+                "agents",
+                "defaults",
+                "bootstrapMaxChars",
                 default=DEFAULT_BOOTSTRAP_MAX_CHARS,
             ),
             "bootstrap_total_max_chars": self._get_nested(
-                "agents", "defaults", "bootstrapTotalMaxChars",
+                "agents",
+                "defaults",
+                "bootstrapTotalMaxChars",
                 default=DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
             ),
             "findings_count": len(audit_result["findings"]),
@@ -585,15 +629,15 @@ class CostGovernor:
 
         return baseline
 
-    def get_baselines(self) -> List[Dict[str, Any]]:
+    def get_baselines(self) -> list[dict[str, Any]]:
         """Return all recorded baselines."""
         state = self._load_state()
-        result: List[Dict[str, Any]] = state.get("baselines", [])
+        result: list[dict[str, Any]] = state.get("baselines", [])
         return result
 
     # --- Governor loop ---
 
-    def run_governor(self) -> Dict[str, Any]:
+    def run_governor(self) -> dict[str, Any]:
         """Full governor cycle: audit current state, compare to baseline,
         recommend actions, log results.
 
@@ -607,8 +651,8 @@ class CostGovernor:
         baselines = state.get("baselines", [])
         initial_baseline = baselines[0] if baselines else None
 
-        actions_taken: List[str] = []
-        alerts: List[str] = []
+        actions_taken: list[str] = []
+        alerts: list[str] = []
 
         # Check 1: Model cost drift
         if audit_result["current_model"] in EXPENSIVE_MODELS:
@@ -635,7 +679,7 @@ class CostGovernor:
             alerts.append(f"Compaction mode '{compaction}' — should be 'default'")
 
         # Build result
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "timestamp": now,
             "status": "healthy" if not alerts else "needs_attention",
             "current_model": audit_result["current_model"],
@@ -661,7 +705,7 @@ class CostGovernor:
 
     # --- Status ---
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Return current cost governance status and history summary."""
         state = self._load_state()
         history = state.get("governor_history", [])
@@ -676,22 +720,16 @@ class CostGovernor:
         )
 
         # Compute savings vs first baseline
-        savings_vs_baseline: Optional[Dict[str, Any]] = None
+        savings_vs_baseline: dict[str, Any] | None = None
         if baselines:
             first = baselines[0]
             old_cost = first.get("model_cost_per_m_input", 0)
             new_cost = model_cost.get("input", 0)
-            if old_cost > 0:
-                cost_reduction = (1 - new_cost / old_cost) * 100
-            else:
-                cost_reduction = 0.0
+            cost_reduction = (1 - new_cost / old_cost) * 100 if old_cost > 0 else 0.0
 
             old_tokens = first.get("bootstrap_est_tokens", 0)
             new_tokens = bootstrap["total_est_tokens"]
-            if old_tokens > 0:
-                token_reduction = (1 - new_tokens / old_tokens) * 100
-            else:
-                token_reduction = 0.0
+            token_reduction = (1 - new_tokens / old_tokens) * 100 if old_tokens > 0 else 0.0
 
             savings_vs_baseline = {
                 "baseline_date": first.get("timestamp", ""),
@@ -705,9 +743,12 @@ class CostGovernor:
             "current_model": current_model,
             "model_cost_per_m_input": model_cost.get("input", 0),
             "model_tier": (
-                "expensive" if current_model in EXPENSIVE_MODELS
-                else "mid" if current_model in MID_TIER_MODELS
-                else "cheap/local" if current_model in CHEAP_MODELS
+                "expensive"
+                if current_model in EXPENSIVE_MODELS
+                else "mid"
+                if current_model in MID_TIER_MODELS
+                else "cheap/local"
+                if current_model in CHEAP_MODELS
                 else "unknown"
             ),
             "bootstrap_total_chars": bootstrap["total_chars"],
@@ -722,14 +763,14 @@ class CostGovernor:
 
     # --- State persistence ---
 
-    def _load_state(self) -> Dict[str, Any]:
+    def _load_state(self) -> dict[str, Any]:
         try:
-            with open(self._state_file, "r", encoding="utf-8") as f:
+            with open(self._state_file, encoding="utf-8") as f:
                 return json.load(f)  # type: ignore[no-any-return]
         except (OSError, json.JSONDecodeError):
             return {}
 
-    def _save_state(self, state: Dict[str, Any]) -> None:
+    def _save_state(self, state: dict[str, Any]) -> None:
         try:
             tmp = self._state_file + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -741,7 +782,8 @@ class CostGovernor:
 
 # --- Helpers ---
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into base (returns new dict)."""
     result = dict(base)
     for key, val in override.items():
@@ -752,11 +794,9 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
     return result
 
 
-def _list_changed_keys(
-    patch: Dict[str, Any], prefix: str = ""
-) -> List[str]:
+def _list_changed_keys(patch: dict[str, Any], prefix: str = "") -> list[str]:
     """Flatten a nested dict into dotted key paths."""
-    keys: List[str] = []
+    keys: list[str] = []
     for k, v in patch.items():
         full = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
@@ -767,7 +807,7 @@ def _list_changed_keys(
 
 
 def _estimate_total_savings(
-    recommendations: List[Dict[str, Any]],
+    recommendations: list[dict[str, Any]],
 ) -> int:
     """Estimate combined savings from all recommendations (not additive — diminishing)."""
     if not recommendations:
@@ -776,5 +816,5 @@ def _estimate_total_savings(
     remaining = 1.0
     for rec in recommendations:
         pct = rec.get("savings_pct", 0) / 100.0
-        remaining *= (1.0 - pct)
+        remaining *= 1.0 - pct
     return min(95, int((1.0 - remaining) * 100))
