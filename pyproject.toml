@@ -1,6 +1,6 @@
 [project]
 name = "self-optimization"
-version = "0.1.0"
+version = "0.7.0"
 description = "Self-optimization framework for intelligent agents"
 requires-python = ">=3.10"
 license = "MIT"
@@ -26,7 +26,17 @@ target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade (modernize syntax)
+    "B",    # flake8-bugbear (common bugs)
+    "SIM",  # flake8-simplify
+    "T20",  # flake8-print (no print() in library code)
+]
+per-file-ignores = {"src/__main__.py" = ["T20"]}
 
 [tool.mypy]
 python_version = "3.10"

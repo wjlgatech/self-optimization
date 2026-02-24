@@ -2,7 +2,6 @@
 
 import json
 import os
-import socket
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -46,7 +45,7 @@ class TestCheckHealth:
     def test_unhealthy_timeout(self, watchdog: GatewayWatchdog) -> None:
         with patch("gateway_watchdog.socket.socket") as mock_sock_cls:
             mock_sock = MagicMock()
-            mock_sock.connect.side_effect = socket.timeout("timed out")
+            mock_sock.connect.side_effect = TimeoutError("timed out")
             mock_sock_cls.return_value = mock_sock
             health = watchdog.check_health()
         assert health["healthy"] is False
@@ -65,9 +64,11 @@ class TestRestartGateway:
     def test_fallback_to_bootout_bootstrap(self, watchdog: GatewayWatchdog) -> None:
         fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="fail")
         success = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("subprocess.run", side_effect=[fail, success, success]):
-            with patch("gateway_watchdog.time.sleep"):
-                result = watchdog.restart_gateway()
+        with (
+            patch("subprocess.run", side_effect=[fail, success, success]),
+            patch("gateway_watchdog.time.sleep"),
+        ):
+            result = watchdog.restart_gateway()
         assert result["success"] is True
         assert result["method"] == "bootout+bootstrap"
 
@@ -86,27 +87,31 @@ class TestRunCheck:
     def test_unhealthy_then_recovered(self, watchdog: GatewayWatchdog) -> None:
         unhealthy = {"healthy": False, "port": 31415, "detail": "refused", "timestamp": "t"}
         healthy = {"healthy": True, "port": 31415, "detail": "ok", "timestamp": "t"}
-        with patch.object(watchdog, "check_health", side_effect=[unhealthy, healthy]):
-            with patch.object(
+        with (
+            patch.object(watchdog, "check_health", side_effect=[unhealthy, healthy]),
+            patch.object(
                 watchdog,
                 "restart_gateway",
                 return_value={"method": "kickstart", "success": True, "output": "ok"},
-            ):
-                with patch("gateway_watchdog.time.sleep"):
-                    result = watchdog.run_check()
+            ),
+            patch("gateway_watchdog.time.sleep"),
+        ):
+            result = watchdog.run_check()
         assert result["status"] == "recovered"
         assert result["action"] == "restarted"
 
     def test_unhealthy_all_retries_fail(self, watchdog: GatewayWatchdog) -> None:
         unhealthy = {"healthy": False, "port": 31415, "detail": "refused", "timestamp": "t"}
-        with patch.object(watchdog, "check_health", return_value=unhealthy):
-            with patch.object(
+        with (
+            patch.object(watchdog, "check_health", return_value=unhealthy),
+            patch.object(
                 watchdog,
                 "restart_gateway",
                 return_value={"method": "all_failed", "success": False, "output": "err"},
-            ):
-                with patch("gateway_watchdog.time.sleep"):
-                    result = watchdog.run_check()
+            ),
+            patch("gateway_watchdog.time.sleep"),
+        ):
+            result = watchdog.run_check()
         assert result["status"] == "down"
         assert result["action"] == "escalate"
         assert result["total_attempts"] == 2

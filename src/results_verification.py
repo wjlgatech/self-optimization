@@ -1,11 +1,12 @@
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 
 class ResultsVerificationFramework:
-    def __init__(self, max_history: int = 1000):
+    def __init__(self, max_history: int = 1000) -> None:
         """
         Initialize Results Verification System
 
@@ -19,14 +20,9 @@ class ResultsVerificationFramework:
             "compoundable": self._check_compoundability,
         }
 
-        self.verification_history: List[Dict[str, Any]] = []
+        self.verification_history: list[dict[str, Any]] = []
         self.max_history = max_history
 
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - ResultsVerification - %(levelname)s - %(message)s",
-        )
         self.logger = logging.getLogger(__name__)
 
     def add_custom_verification_criterion(self, name: str, verification_func: Callable) -> None:
@@ -44,7 +40,7 @@ class ResultsVerificationFramework:
             )
         self.verification_criteria[name] = verification_func
 
-    def verify_results(self, results: Dict[str, Any]) -> Dict[str, bool]:
+    def verify_results(self, results: dict[str, Any]) -> dict[str, bool]:
         """
         Verify results against predefined criteria
 
@@ -76,7 +72,7 @@ class ResultsVerificationFramework:
 
         return verification_results
 
-    def _check_specificity(self, results: Dict[str, Any]) -> bool:
+    def _check_specificity(self, results: dict[str, Any]) -> bool:
         """
         Check if results are specific and well-defined
 
@@ -90,7 +86,7 @@ class ResultsVerificationFramework:
             and all(value is not None for value in results.values())
         )
 
-    def _check_measurability(self, results: Dict[str, Any]) -> bool:
+    def _check_measurability(self, results: dict[str, Any]) -> bool:
         """
         Check if results can be quantitatively measured
 
@@ -101,7 +97,7 @@ class ResultsVerificationFramework:
             return False
         return any(isinstance(value, (int, float, str)) for value in results.values())
 
-    def _check_actionability(self, results: Dict[str, Any]) -> bool:
+    def _check_actionability(self, results: dict[str, Any]) -> bool:
         """
         Check if results can be immediately acted upon
 
@@ -110,7 +106,7 @@ class ResultsVerificationFramework:
         """
         return "next_step" in results or "recommendation" in results
 
-    def _check_reusability(self, results: Dict[str, Any]) -> bool:
+    def _check_reusability(self, results: dict[str, Any]) -> bool:
         """
         Check if results can be applied to other contexts
 
@@ -119,7 +115,7 @@ class ResultsVerificationFramework:
         """
         return len(results) > 1  # Multiple applicable insights
 
-    def _check_compoundability(self, results: Dict[str, Any]) -> bool:
+    def _check_compoundability(self, results: dict[str, Any]) -> bool:
         """
         Check if results can generate further insights
 

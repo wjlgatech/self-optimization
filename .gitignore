@@ -9,6 +9,11 @@ venv/
 .venv/
 ENV/
 
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
 # IDE
 .idea/
 .vscode/
@@ -24,11 +29,14 @@ logs/
 .pytest_cache/
 htmlcov/
 
+# Type checking
+.mypy_cache/
+
 # System
 .DS_Store
 Thumbs.db
 
-# Project specific
+# Secrets — never commit these
 *.sqlite
 .env
 .env.local

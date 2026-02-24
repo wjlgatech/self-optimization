@@ -1,34 +1,32 @@
+"""Multi-agent performance optimizer: tracks, scores, and escalates agent performance."""
+
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 
 class MultiAgentPerformanceOptimizer:
-    def __init__(self, quality_threshold: float = 0.85):
+    def __init__(self, quality_threshold: float = 0.85) -> None:
         """
         Initialize Multi-Agent Performance Optimization System
 
         :param quality_threshold: Minimum performance threshold
         """
-        self.agents: Dict[str, Dict[str, Any]] = {}
-        self.performance_history: List[Dict[str, Any]] = []
+        self.agents: dict[str, dict[str, Any]] = {}
+        self.performance_history: list[dict[str, Any]] = []
         self.quality_threshold = quality_threshold
-        self.optimization_strategies: List[Callable] = []
-        self.metric_weights: Dict[str, float] = {
+        self.optimization_strategies: list[Callable] = []
+        self.metric_weights: dict[str, float] = {
             "accuracy": 0.4,
             "efficiency": 0.35,
             "adaptability": 0.25,
         }
 
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - MultiAgentPerformance - %(levelname)s - %(message)s",
-        )
         self.logger = logging.getLogger(__name__)
 
-    def register_agent(self, agent_details: Dict[str, Any]) -> str:
+    def register_agent(self, agent_details: dict[str, Any]) -> str:
         """
         Register a new agent in the system
 
@@ -43,7 +41,7 @@ class MultiAgentPerformanceOptimizer:
         self.agents[agent_id] = agent_details
         return agent_id
 
-    def update_agent_performance(self, agent_id: str, performance_data: Dict[str, Any]) -> None:
+    def update_agent_performance(self, agent_id: str, performance_data: dict[str, Any]) -> None:
         """
         Update performance metrics for a specific agent
 
@@ -73,7 +71,7 @@ class MultiAgentPerformanceOptimizer:
         if performance_score < self.quality_threshold:
             self._trigger_optimization(agent_id)
 
-    def _calculate_performance_score(self, performance_data: Dict[str, Any]) -> float:
+    def _calculate_performance_score(self, performance_data: dict[str, Any]) -> float:
         """
         Calculate a weighted performance score.
 
@@ -118,7 +116,7 @@ class MultiAgentPerformanceOptimizer:
             except Exception as e:
                 self.logger.error(f"Optimization strategy failed: {e}")
 
-    def get_top_performing_agents(self, n: int = 5) -> List[Dict[str, Any]]:
+    def get_top_performing_agents(self, n: int = 5) -> list[dict[str, Any]]:
         """
         Retrieve top performing agents
 
@@ -130,7 +128,7 @@ class MultiAgentPerformanceOptimizer:
         )
         return sorted_agents[:n]
 
-    def generate_performance_report(self, time_window: int = 30) -> Dict[str, Any]:
+    def generate_performance_report(self, time_window: int = 30) -> dict[str, Any]:
         """
         Generate a comprehensive performance report
 
@@ -165,7 +163,7 @@ class MultiAgentPerformanceOptimizer:
 
         return sum(performance_scores) / len(performance_scores) if performance_scores else 0
 
-    def _analyze_performance_trends(self, performance_logs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_performance_trends(self, performance_logs: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Analyze performance trends from recent logs.
 
@@ -179,15 +177,15 @@ class MultiAgentPerformanceOptimizer:
             return {"overall_trend": "stable", "improving_agents": [], "declining_agents": []}
 
         # Group by agent_id
-        agent_scores: Dict[str, List[float]] = {}
+        agent_scores: dict[str, list[float]] = {}
         for log in performance_logs:
             aid = log.get("agent_id", "unknown")
             score = log.get("performance_score")
             if isinstance(score, (int, float)):
                 agent_scores.setdefault(aid, []).append(float(score))
 
-        improving: List[str] = []
-        declining: List[str] = []
+        improving: list[str] = []
+        declining: list[str] = []
 
         for aid, scores in agent_scores.items():
             if len(scores) < 2:

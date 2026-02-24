@@ -92,7 +92,8 @@ def main() -> None:
         help="Optimization strategy (default: balanced)",
     )
     cost_apply_parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Show patch without applying",
     )
 
@@ -112,9 +113,7 @@ def main() -> None:
     gw_parser.add_argument(
         "--port", type=int, default=0, help="Gateway port (default: from config)"
     )
-    gw_parser.add_argument(
-        "--token", default="", help="Gateway auth token (default: from config)"
-    )
+    gw_parser.add_argument("--token", default="", help="Gateway auth token (default: from config)")
 
     args = parser.parse_args()
 

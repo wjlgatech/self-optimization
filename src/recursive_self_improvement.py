@@ -1,18 +1,19 @@
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 
 class RecursiveSelfImprovementProtocol:
-    def __init__(self, ethical_constraints: Optional[Dict[str, Any]] = None):
+    def __init__(self, ethical_constraints: dict[str, Any] | None = None) -> None:
         """
         Initialize Recursive Self-Improvement Protocol
 
         :param ethical_constraints: Dictionary of ethical guidelines
         """
-        self.improvement_history: List[Dict[str, Any]] = []
-        self.learning_strategies: List[Callable] = []
-        self.capability_map: Dict[str, Any] = {}
+        self.improvement_history: list[dict[str, Any]] = []
+        self.learning_strategies: list[Callable] = []
+        self.capability_map: dict[str, Any] = {}
 
         # Default ethical constraints
         self.ethical_constraints = ethical_constraints or {
@@ -22,11 +23,6 @@ class RecursiveSelfImprovementProtocol:
             "reversibility": True,
         }
 
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - RecursiveSelfImprovement - %(levelname)s - %(message)s",
-        )
         self.logger = logging.getLogger(__name__)
 
     def register_learning_strategy(self, strategy: Callable) -> None:
@@ -37,7 +33,7 @@ class RecursiveSelfImprovementProtocol:
         """
         self.learning_strategies.append(strategy)
 
-    def update_capability_map(self, new_capabilities: Dict[str, Any]) -> None:
+    def update_capability_map(self, new_capabilities: dict[str, Any]) -> None:
         """
         Update the system's capability map
 
@@ -51,7 +47,7 @@ class RecursiveSelfImprovementProtocol:
 
         self._log_improvement("capability_update", new_capabilities)
 
-    def generate_improvement_proposals(self) -> List[Dict[str, Any]]:
+    def generate_improvement_proposals(self) -> list[dict[str, Any]]:
         """
         Generate potential self-improvement strategies
 
@@ -72,7 +68,7 @@ class RecursiveSelfImprovementProtocol:
 
         return self._filter_proposals(proposals)
 
-    def _identify_capability_gaps(self) -> Dict[str, Any]:
+    def _identify_capability_gaps(self) -> dict[str, Any]:
         """
         Identify gaps in current capabilities.
 
@@ -90,9 +86,9 @@ class RecursiveSelfImprovementProtocol:
             "self_monitoring",
         ]
 
-        low_performance: List[str] = []
-        missing: List[str] = []
-        potential_improvements: List[str] = []
+        low_performance: list[str] = []
+        missing: list[str] = []
+        potential_improvements: list[str] = []
 
         now = datetime.now()
 
@@ -124,7 +120,7 @@ class RecursiveSelfImprovementProtocol:
             "potential_improvements": potential_improvements,
         }
 
-    def _filter_proposals(self, proposals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _filter_proposals(self, proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Filter improvement proposals based on ethical constraints
 
@@ -139,7 +135,7 @@ class RecursiveSelfImprovementProtocol:
 
         return filtered_proposals
 
-    def _validate_proposal(self, proposal: Dict[str, Any]) -> bool:
+    def _validate_proposal(self, proposal: dict[str, Any]) -> bool:
         """
         Validate an improvement proposal against ethical constraints
 
@@ -154,7 +150,7 @@ class RecursiveSelfImprovementProtocol:
 
         return True
 
-    def execute_improvement(self, proposal: Dict[str, Any]) -> None:
+    def execute_improvement(self, proposal: dict[str, Any]) -> None:
         """
         Execute a selected improvement proposal
 
@@ -170,7 +166,7 @@ class RecursiveSelfImprovementProtocol:
         except Exception as e:
             self.logger.error(f"Improvement execution failed: {e}")
 
-    def _implement_improvement(self, proposal: Dict[str, Any]) -> Dict[str, Any]:
+    def _implement_improvement(self, proposal: dict[str, Any]) -> dict[str, Any]:
         """
         Implement a specific improvement proposal.
 
@@ -182,7 +178,7 @@ class RecursiveSelfImprovementProtocol:
         :return: Detailed change record
         """
         target = proposal.get("target", "")
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "status": "implemented",
             "timestamp": datetime.now().isoformat(),
             "changes": [],
@@ -218,7 +214,7 @@ class RecursiveSelfImprovementProtocol:
 
         return result
 
-    def _log_improvement(self, improvement_type: str, details: Dict[str, Any]) -> None:
+    def _log_improvement(self, improvement_type: str, details: dict[str, Any]) -> None:
         """
         Log an improvement event
 
@@ -233,7 +229,7 @@ class RecursiveSelfImprovementProtocol:
 
         self.improvement_history.append(log_entry)
 
-    def generate_improvement_report(self, time_window: int = 30) -> Dict[str, Any]:
+    def generate_improvement_report(self, time_window: int = 30) -> dict[str, Any]:
         """
         Generate a comprehensive improvement report
 
@@ -248,8 +244,8 @@ class RecursiveSelfImprovementProtocol:
             if datetime.fromisoformat(log["timestamp"]) > cutoff_date
         ]
 
-        improvement_types: Dict[str, int] = {}
-        report: Dict[str, Any] = {
+        improvement_types: dict[str, int] = {}
+        report: dict[str, Any] = {
             "total_improvements": len(recent_improvements),
             "improvement_types": improvement_types,
             "capability_growth": self._analyze_capability_growth(recent_improvements),
@@ -262,7 +258,7 @@ class RecursiveSelfImprovementProtocol:
 
         return report
 
-    def _analyze_capability_growth(self, improvements: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _analyze_capability_growth(self, improvements: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Analyze capability growth from recent improvements.
 

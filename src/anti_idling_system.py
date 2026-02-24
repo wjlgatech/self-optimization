@@ -1,10 +1,13 @@
+"""Anti-idling system: detects idle agents and dispatches emergency actions."""
+
 import logging
 import time
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 
 
 class AntiIdlingSystem:
-    def __init__(self, idle_threshold: float = 0.10, minimum_productive_actions: int = 10):
+    def __init__(self, idle_threshold: float = 0.10, minimum_productive_actions: int = 10) -> None:
         """
         Initialize Anti-Idling System
 
@@ -20,18 +23,13 @@ class AntiIdlingSystem:
         self.idle_threshold = idle_threshold
         self.minimum_productive_actions = minimum_productive_actions
         self._running = False
-        self.activity_log: List[Dict[str, Any]] = []
-        self.intervention_callbacks: List[Callable] = []
-        self.action_handlers: Dict[str, Callable] = {}
+        self.activity_log: list[dict[str, Any]] = []
+        self.intervention_callbacks: list[Callable] = []
+        self.action_handlers: dict[str, Callable] = {}
 
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - AntiIdlingSystem - %(levelname)s - %(message)s",
-        )
         self.logger = logging.getLogger(__name__)
 
-    def log_activity(self, activity: Dict[str, Any]) -> None:
+    def log_activity(self, activity: dict[str, Any]) -> None:
         """
         Log a system activity
 
@@ -95,13 +93,13 @@ class AntiIdlingSystem:
             raise TypeError(f"callback must be callable, got {type(callback).__name__}")
         self.intervention_callbacks.append(callback)
 
-    def detect_and_interrupt_idle_state(self) -> List[str]:
+    def detect_and_interrupt_idle_state(self) -> list[str]:
         """
         Detect idle state and trigger interventions.
 
         :return: List of action names that were executed via handlers
         """
-        executed: List[str] = []
+        executed: list[str] = []
         idle_rate = self.calculate_idle_rate()
 
         if idle_rate > self.idle_threshold:
@@ -131,7 +129,7 @@ class AntiIdlingSystem:
 
         return executed
 
-    def generate_emergency_actions(self) -> List[str]:
+    def generate_emergency_actions(self) -> list[str]:
         """
         Generate emergency actions to break idle state.
 

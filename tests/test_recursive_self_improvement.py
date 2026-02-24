@@ -1,4 +1,4 @@
-from src.recursive_self_improvement import RecursiveSelfImprovementProtocol
+from recursive_self_improvement import RecursiveSelfImprovementProtocol
 
 
 class TestRecursiveSelfImprovementProtocol:
@@ -22,7 +22,7 @@ class TestRecursiveSelfImprovementProtocol:
         self.protocol.update_capability_map(new_capabilities)
 
         # Check capability registration
-        for capability, details in new_capabilities.items():
+        for capability, _details in new_capabilities.items():
             assert capability in self.protocol.capability_map
             assert "added_timestamp" in self.protocol.capability_map[capability]
 

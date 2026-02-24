@@ -504,7 +504,8 @@ class TestModelDetection:
         # Redirect expanduser so it doesn't read the real gateway log
         fake_home = tmp_env["state_dir"]
         monkeypatch.setattr(
-            os.path, "expanduser",
+            os.path,
+            "expanduser",
             lambda p: p.replace("~", fake_home),
         )
 

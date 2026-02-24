@@ -9,7 +9,7 @@ import logging
 import os
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,10 @@ class LLMProvider:
         if context:
             user_content = f"Context:\n{context}\n\nTask:\n{prompt}"
 
-        messages: List[Dict[str, str]] = [{"role": "user", "content": user_content}]
+        messages: list[dict[str, str]] = [{"role": "user", "content": user_content}]
         return self._call_api(messages, max_tokens)
 
-    def _call_api(self, messages: List[Dict[str, str]], max_tokens: int = 1024) -> str:
+    def _call_api(self, messages: list[dict[str, str]], max_tokens: int = 1024) -> str:
         """Make a POST request to the Anthropic Messages API."""
         payload = {
             "model": self.model,
@@ -61,7 +61,7 @@ class LLMProvider:
 
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
-                data: Dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                data: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
                 content = data.get("content", [])
                 if content and isinstance(content, list):
                     return str(content[0].get("text", ""))
@@ -77,8 +77,8 @@ class LLMProvider:
             return ""
 
     def format_request(
-        self, messages: List[Dict[str, str]], max_tokens: int = 1024
-    ) -> Dict[str, Any]:
+        self, messages: list[dict[str, str]], max_tokens: int = 1024
+    ) -> dict[str, Any]:
         """Format a request payload without sending it (useful for testing)."""
         return {
             "url": API_URL,

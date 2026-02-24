@@ -162,28 +162,35 @@ Falls back to rule-based analysis if no key is set.
 ## Contributor Workflow
 
 ```bash
-# First-time setup
+# First-time setup (installs deps + pre-commit hooks)
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+make install       # pip install -e ".[dev]" && pre-commit install
 
-# Before every commit
-make check   # runs: ruff lint + mypy typecheck + pytest
+# Before every commit (pre-commit hooks run these automatically)
+make check         # runs: ruff lint + mypy typecheck + pytest
 
 # Individual gates
-make lint        # ruff check src/ tests/
-make format      # ruff format src/ tests/
-make typecheck   # mypy src/
-make test        # pytest tests/ -v
+make lint          # ruff check src/ tests/
+make fmt           # ruff format src/ tests/
+make typecheck     # mypy src/
+make test          # pytest tests/ -v
+make pre-commit    # run all pre-commit hooks on all files
 ```
 
-### Pre-commit hooks
+### Pre-commit hooks (mandatory)
 
-```bash
-pre-commit install   # one-time setup
-```
+Pre-commit hooks are installed automatically by `make install`. They enforce:
 
-Hooks run ruff (lint + format) and mypy on staged files automatically.
+1. **Trailing whitespace** removal
+2. **End-of-file newline** enforcement
+3. **YAML/JSON validation** (catches syntax errors before commit)
+4. **Merge conflict markers** detection
+5. **Large file guard** (blocks files >200KB — prevents accidental binary commits)
+6. **Ruff lint + format** (auto-fixes import sorting, modernizes syntax)
+7. **Mypy** type checking on `src/`
+
+These hooks run on every `git commit`. You cannot bypass them without `--no-verify`.
 
 ## Running Tests
 
@@ -193,17 +200,27 @@ make test
 pytest tests/ -v
 ```
 
-259 tests, all passing. Pytest config lives in `pyproject.toml`.
+330 tests, all passing. Pytest config lives in `pyproject.toml`.
 
 ## Quality Gates
 
-All three must pass before merging:
+All three must pass before merging — enforced by pre-commit hooks:
 
-1. **Ruff** — linting and import sorting (`ruff check`)
-2. **Mypy** — type checking on `src/` (`mypy src/`)
-3. **Pytest** — 259 tests (`pytest tests/ -v`)
+1. **Ruff** — linting (E/F/W/I/UP/B/SIM/T20), import sorting, modern syntax (`ruff check`)
+2. **Mypy** — strict type checking on `src/` (`mypy src/`)
+3. **Pytest** — 330 tests (`pytest tests/ -v`)
 
 Run all at once with `make check`.
+
+## Code Standards (enforced automatically)
+
+- **Modern Python**: use `dict`, `list`, `X | None` — not `Dict`, `List`, `Optional` (ruff UP rules)
+- **Imports**: stdlib first, then third-party, then local — enforced by ruff I rules
+- **No `print()` in library code**: only allowed in `__main__.py` (ruff T20 rule)
+- **All public methods typed**: `-> None` on constructors, return types on all methods (mypy strict)
+- **Logging**: call `logging.basicConfig()` only in `__main__.py`, use `logging.getLogger(__name__)` in libraries
+- **Test imports**: use `from module_name import Class` (no `src.` prefix) — conftest.py sets up sys.path
+- **Line length**: 100 characters max
 
 ## Test Conventions
 
@@ -212,6 +229,7 @@ Run all at once with `make check`.
 - Use `pytest.approx()` for floating-point comparisons
 - Use `tmp_path` fixture for file I/O tests
 - Use `unittest.mock.MagicMock` for callback verification
+- Use `zip(..., strict=True)` when iterating paired sequences
 
 ## Key Design Decisions
 
@@ -232,7 +250,7 @@ Run all at once with `make check`.
 - `_analyze_performance_trends()` uses first-half vs second-half comparison, >5% = improving, <-5% = declining
 - `_identify_capability_gaps()` checks for low proficiency (<0.5), stale entries (>30 days), and missing expected capabilities
 - `_implement_improvement()` updates capability_map: existing +0.1 proficiency (capped 1.0), new starts at 0.1
-- `logging.basicConfig()` is called in constructors (first-call-wins behavior)
+- `logging.basicConfig()` is called only in `__main__.py`; library modules use `logging.getLogger(__name__)`
 - Input validation: `log_activity()` rejects non-dict, `register_intervention_callback()` rejects non-callable, `add_custom_verification_criterion()` rejects non-callable/empty name, `verify_results()` rejects non-dict
 - `config_loader.py` parses YAML subset with regex (no PyYAML dependency)
 - Agent names normalized: `loopy` → `loopy-0`, `loopy1` → `loopy-1`
