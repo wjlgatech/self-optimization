@@ -108,6 +108,17 @@ python src/__main__.py cost-apply --strategy balanced --dry-run  # preview only
 python src/__main__.py cost-baseline                       # record current state as baseline
 python src/__main__.py cost-status                         # show savings vs baseline
 python src/__main__.py cost-govern                         # full governor cycle
+
+# Self-evaluation (runs real quality gates on itself)
+python src/__main__.py self-eval                           # JSON report
+python src/__main__.py self-eval --markdown                # human-readable report
+python src/__main__.py self-eval --no-services             # skip service probes (for CI)
+
+# Self-healing (auto-fix lint + format + corrupted state)
+python src/__main__.py self-heal
+
+# Self-discovery (services, repos, config drift)
+python src/__main__.py self-discover
 ```
 
 ## Cost Governor
@@ -140,6 +151,23 @@ make watchdog-status      # show cron entry, deployed files, recent log
 Services with launchd agents (base gateway) get auto-restarted.
 Services without launchd (enterprise, vite) are detected and flagged for manual restart.
 
+## Self-Eval Engine
+
+Four closed loops: DISCOVER → HEAL → EVALUATE → HUMAN.
+
+- **DISCOVER**: `discover_services()` (TCP probes), `discover_repos()` (recursive git scan), `discover_config_drift()` (SHA-256 hash tracking)
+- **HEAL**: `heal_lint()` (ruff --fix), `heal_format()` (ruff format), `heal_state()` (quarantine corrupted JSON)
+- **EVALUATE**: `eval_lint()`, `eval_typecheck()`, `eval_tests()`, `eval_services()` — runs real tools, parses output
+- **REPORT**: Weighted composite score (lint 20%, typecheck 20%, tests 40%, services 20%) → A-F grade
+- **HUMAN**: GitHub Issues on grade drop (C/D/F), auto-heal PRs for fixable lint issues
+
+Grade thresholds: A≥90, B≥80, C≥70, D≥60, F<60. History capped at 90 entries.
+
+CI/CD workflows:
+- `.github/workflows/ci.yml` — on-push quality gates + self-eval
+- `.github/workflows/self-eval.yml` — daily eval, creates GitHub Issues on degradation
+- `.github/workflows/self-heal.yml` — weekly auto-fix PR
+
 ## Cron Setup
 
 Jobs are configured in `~/.openclaw/cron/jobs.json`:
@@ -156,6 +184,8 @@ Runtime state is stored in `state/` (gitignored):
 - `improvement_history.json` — improvement execution log
 - `capability_map.json` — current capability proficiencies
 - `last_run.json` — last operation timestamp and result
+- `eval_history.json` — self-eval score history (90-entry FIFO)
+- `config_hashes.json` — SHA-256 hashes for config drift detection
 
 ## LLM Integration
 
@@ -204,7 +234,7 @@ make test
 pytest tests/ -v
 ```
 
-343 tests, all passing. Pytest config lives in `pyproject.toml`.
+377 tests, all passing. Pytest config lives in `pyproject.toml`.
 
 ## Quality Gates
 
@@ -212,7 +242,7 @@ All three must pass before merging — enforced by pre-commit hooks:
 
 1. **Ruff** — linting (E/F/W/I/UP/B/SIM/T20), import sorting, modern syntax (`ruff check`)
 2. **Mypy** — strict type checking on `src/` (`mypy src/`)
-3. **Pytest** — 343 tests (`pytest tests/ -v`)
+3. **Pytest** — 377 tests (`pytest tests/ -v`)
 
 Run all at once with `make check`.
 
@@ -274,4 +304,5 @@ from orchestrator import SelfOptimizationOrchestrator
 from filesystem_scanner import FilesystemScanner
 from config_loader import load_monitoring_config
 from llm_provider import LLMProvider
+from self_eval import SelfEvalEngine
 ```

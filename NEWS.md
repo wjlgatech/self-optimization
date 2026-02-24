@@ -1,5 +1,41 @@
 # NEWS
 
+## 2026-02-24: Self-Discovering, Self-Healing, Self-Evaluating (v0.9)
+
+**The gap:** The system could monitor services and detect idle agents, but couldn't evaluate *itself*. No CI/CD. No automated quality checks. No way to know if the codebase was degrading. "Self-improvement" was just incrementing a float — no real tools were run.
+
+**The fix:** Four closed loops that actually run real tools on the codebase:
+
+| Loop | What it does | Trigger |
+|------|-------------|---------|
+| **DISCOVER** | Finds services, git repos, config drift | On-demand / daily eval |
+| **HEAL** | Runs `ruff --fix`, `ruff format`, repairs corrupted state JSON | Weekly CI (auto-PR) |
+| **EVALUATE** | Runs ruff, mypy, pytest on itself — scores A-F with weighted composite | Daily CI + on-push |
+| **HUMAN** | Creates GitHub Issues when grade drops below B; auto-heal creates PRs | Automated via Actions |
+
+**What changed:**
+- New `SelfEvalEngine` (`src/self_eval.py`) with discover, heal, eval, and report capabilities
+- `discover_services()` — TCP probes all 3 OpenClaw services
+- `discover_repos()` — finds git repos in workspace (recursive, depth 3)
+- `discover_config_drift()` — SHA-256 hash tracking detects changed config files
+- `heal_lint()` / `heal_format()` — runs ruff auto-fix
+- `heal_state()` — detects and quarantines corrupted JSON state files
+- `eval_lint()` / `eval_typecheck()` / `eval_tests()` — runs real quality gates, parses output
+- `eval_services()` — scores service health with critical-service penalty
+- `run_full_eval()` — weighted composite score (lint 20%, typecheck 20%, tests 40%, services 20%)
+- `generate_markdown_report()` — human-readable health report with trend tracking
+- `generate_github_issue_body()` — auto-creates issue content when grade drops
+- 90-entry FIFO history for trend analysis (score direction, test count growth)
+- New CLI commands: `self-eval`, `self-heal`, `self-discover`
+- `.github/workflows/ci.yml` — on-push quality gates + self-eval
+- `.github/workflows/self-eval.yml` — daily scheduled eval, creates GitHub Issues on degradation
+- `.github/workflows/self-heal.yml` — weekly auto-fix PR for lint/format issues
+- **377 tests passing**, ruff clean, mypy clean
+
+**Bottom line:** The system now evaluates itself with the same tools a human developer would use. Grade drops → GitHub Issue. Fixable lint → auto-PR. Human stays in the loop via GitHub, not pager duty.
+
+---
+
 ## 2026-02-24: Enterprise Gateway Monitoring — Closing the Biggest Gap (v0.8)
 
 **The gap:** The README promised "your gateway crashes at 3 AM, users never notice." In reality, the watchdog only monitored the base gateway (port 3000). The Enterprise Gateway (port 18789) — the actual user-facing bot server — had **zero monitoring**. It could be down for days without detection. On top of that, `DEFAULT_PORT` was hardcoded to `31415`, a port nothing actually uses.
