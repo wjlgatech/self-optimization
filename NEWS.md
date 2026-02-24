@@ -1,5 +1,28 @@
 # NEWS
 
+## 2026-02-24: Enterprise Gateway Monitoring — Closing the Biggest Gap (v0.8)
+
+**The gap:** The README promised "your gateway crashes at 3 AM, users never notice." In reality, the watchdog only monitored the base gateway (port 3000). The Enterprise Gateway (port 18789) — the actual user-facing bot server — had **zero monitoring**. It could be down for days without detection. On top of that, `DEFAULT_PORT` was hardcoded to `31415`, a port nothing actually uses.
+
+**The fix:** The watchdog now monitors all three OpenClaw services: base gateway (3000), enterprise gateway (18789), and web UI (5173). Each service is probed independently. The orchestrator's `idle_check()` and `status()` now include `service_health` — so every idle check also verifies all services are up.
+
+**What changed:**
+- `GatewayWatchdog` now supports multi-service monitoring via `services` list
+- Auto-detects all three services from config (gateway, enterprise, vite-ui)
+- `run_check()` probes all services, not just one port
+- `check_all_services()` returns per-service health with `critical` flag
+- `restart_service()` handles services with/without launchd labels (no-launchd → `critical_down`)
+- `DEFAULT_PORT` fixed from `31415` to `3000`
+- New `probe_port()` standalone function for ad-hoc health checks
+- Orchestrator `idle_check()` and `status()` now include `service_health` dict
+- Critical services down are logged with `services_down` list
+- README claims updated to match reality (honest about auto-restart vs detect-only)
+- **343 tests passing**, ruff clean, mypy clean
+
+**Bottom line:** The system no longer lies about what it monitors. All three services are checked. If something is down, you know immediately — whether it can be auto-fixed or needs manual intervention.
+
+---
+
 ## 2025-02-24: Idle Agents Now Fix Themselves (v0.7)
 
 **The gap:** The anti-idling system could *detect* when agents stopped working and *propose* emergency actions — but never actually *executed* them. `actions_taken` was a lie. The actions were logged and forgotten.

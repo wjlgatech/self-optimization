@@ -4,9 +4,9 @@
 
 **Your AI bills are 19x higher than they need to be. One command cuts 94.7%.**
 
-**Your gateway crashes at 3 AM. You sleep through it. Users never notice.**
+**All three OpenClaw services monitored: base gateway (3000), enterprise bot (18789), web UI (5173). Crash at 3 AM → detected in 5 minutes.**
 
-A zero-dependency Python framework that makes AI agent operations reliable, affordable, and self-correcting. Built for [OpenClaw](https://docs.openclaw.ai). 330 tests. Zero external packages. Runs on your machine, on your schedule.
+A zero-dependency Python framework that makes AI agent operations reliable, affordable, and self-correcting. Built for [OpenClaw](https://docs.openclaw.ai). 343 tests. Zero external packages. Runs on your machine, on your schedule.
 
 ```bash
 pip install -e ".[dev]" && make install-watchdog && make cost-audit
@@ -20,7 +20,7 @@ pip install -e ".[dev]" && make install-watchdog && make cost-audit
 
 **The problem you're solving:** Your AI gateway crashes at 3 AM on a Saturday. Your Telegram bot, Discord channels, and Slack integrations all go dark. You wake up Sunday to 47 undelivered messages and an angry group chat.
 
-**With this:** The watchdog detects the crash in under 5 minutes, restarts the gateway automatically, and your users never notice. You slept through the whole thing.
+**With this:** The watchdog monitors all three OpenClaw services every 5 minutes: base gateway (port 3000), enterprise gateway (port 18789), and web UI (port 5173). Services with launchd agents get auto-restarted. Services without launchd (enterprise gateway) get flagged as `critical_down` for immediate manual intervention.
 
 ```bash
 make install-watchdog      # one command, handles everything
@@ -36,15 +36,23 @@ macOS cron can't read `~/Documents/` or access Python virtualenvs due to TCC san
 </details>
 
 <details>
-<summary><b>Implementation: TCP probe + launchctl restart pipeline</b></summary>
+<summary><b>Implementation: multi-service TCP probes + launchctl restart</b></summary>
 
-Every 5 minutes via system crontab:
+Every 5 minutes via system crontab, probes all three services:
 
+| Service | Port | Auto-restart | Critical |
+|---------|------|-------------|----------|
+| Base gateway | 3000 | Yes (launchd) | Yes |
+| Enterprise gateway | 18789 | No (manual) | Yes |
+| Web UI (Vite) | 5173 | No (manual) | No |
+
+For services with launchd agents:
 1. TCP socket probe to `127.0.0.1:{port}` (faster than HTTP health checks)
 2. If down: `launchctl kickstart -k` (atomic kill + restart)
 3. If kickstart fails: `bootout` + `bootstrap` (full service reload)
 4. 3 retry attempts with 10s delays and post-restart verification
-5. JSON results logged to `/tmp/openclaw-watchdog.log`
+
+For services without launchd: detected and reported as `critical_down` or `degraded`. JSON results logged to `/tmp/openclaw-watchdog.log`.
 
 Idempotent cron management via marker comments. Safe to run `make install-watchdog` repeatedly.
 
@@ -107,7 +115,7 @@ Three strategies: `aggressive` (local Ollama, free), `balanced` (Haiku, 19x chea
 
 **The problem you're solving:** Your AI agent has been "running" for 6 hours but produced nothing. No commits, no file changes, no output. Worse — even when the system detected the idle state, it only logged it. Nothing actually happened.
 
-**With this:** Every 2 hours, the system scans real filesystem activity. Zero output triggers automatic intervention: the idle detector dispatches emergency actions directly into the self-improvement engine. Strategic analysis kicks off, skill development starts, research sprints begin — all without human intervention.
+**With this:** Every 2 hours, the system scans real filesystem activity AND probes all service health. Zero output triggers automatic intervention: the idle detector dispatches emergency actions directly into the self-improvement engine. Critical services down? Reported immediately alongside idle rate. Strategic analysis kicks off, skill development starts, research sprints begin — all without human intervention.
 
 ```bash
 .venv/bin/python src/__main__.py --agent-id loopy-0 idle-check
@@ -119,11 +127,17 @@ Three strategies: `aggressive` (local Ollama, free), `balanced` (Haiku, 19x chea
   "triggered": true,
   "actions_proposed": ["conduct_strategic_analysis", "explore_new_skill_development"],
   "actions_executed": ["conduct_strategic_analysis", "explore_new_skill_development"],
-  "idle_rate": 0.97
+  "idle_rate": 0.97,
+  "service_health": {
+    "gateway": {"healthy": true, "port": 3000},
+    "enterprise": {"healthy": false, "port": 18789, "critical": true},
+    "vite-ui": {"healthy": true, "port": 5173}
+  },
+  "services_down": ["enterprise"]
 }
 ```
 
-`actions_proposed` = what the system thinks should happen. `actions_executed` = what actually happened. No more log-only interventions.
+`actions_proposed` vs `actions_executed` = no more log-only interventions. `service_health` = every idle check also verifies all OpenClaw services are up.
 
 <details>
 <summary><b>Technical innovation: handler-dispatch architecture</b></summary>
@@ -299,7 +313,7 @@ src/
 
 ```bash
 source .venv/bin/activate
-make check   # ruff lint + mypy typecheck + pytest (330 tests, all passing)
+make check   # ruff lint + mypy typecheck + pytest (343 tests, all passing)
 ```
 
 See `CLAUDE.md` for design decisions, test conventions, and contributor workflow.

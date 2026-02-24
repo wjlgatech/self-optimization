@@ -126,15 +126,19 @@ make cost-govern    # full governor cycle (audit + compare + alert)
 
 Strategies for `cost-apply`: `aggressive` (local model), `balanced` (Haiku), `conservative` (keep model, trim waste).
 
-## Gateway Watchdog Installer
+## Gateway Watchdog
 
-One-command setup for the gateway health monitor (copies scripts to `~/.openclaw/scripts/`, uses system Python to avoid macOS sandbox issues with cron):
+Monitors all three OpenClaw services (base gateway:3000, enterprise:18789, vite-ui:5173).
+One-command setup copies scripts to `~/.openclaw/scripts/`, uses system Python to avoid macOS sandbox issues with cron:
 
 ```bash
 make install-watchdog     # deploy scripts + install cron job
 make uninstall-watchdog   # remove cron job + deployed scripts (preserves log)
 make watchdog-status      # show cron entry, deployed files, recent log
 ```
+
+Services with launchd agents (base gateway) get auto-restarted.
+Services without launchd (enterprise, vite) are detected and flagged for manual restart.
 
 ## Cron Setup
 
@@ -200,7 +204,7 @@ make test
 pytest tests/ -v
 ```
 
-330 tests, all passing. Pytest config lives in `pyproject.toml`.
+343 tests, all passing. Pytest config lives in `pyproject.toml`.
 
 ## Quality Gates
 
@@ -208,7 +212,7 @@ All three must pass before merging — enforced by pre-commit hooks:
 
 1. **Ruff** — linting (E/F/W/I/UP/B/SIM/T20), import sorting, modern syntax (`ruff check`)
 2. **Mypy** — strict type checking on `src/` (`mypy src/`)
-3. **Pytest** — 330 tests (`pytest tests/ -v`)
+3. **Pytest** — 343 tests (`pytest tests/ -v`)
 
 Run all at once with `make check`.
 

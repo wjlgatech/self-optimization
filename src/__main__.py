@@ -6,7 +6,7 @@ Usage:
     python src/__main__.py run-daemon [--interval 7200] [--review-hour 23]
     python src/__main__.py status
     python src/__main__.py intervention [--agent loopy-0]
-    python src/__main__.py gateway-watchdog [--port 31415]
+    python src/__main__.py gateway-watchdog [--port 3000]
     python src/__main__.py cost-audit
     python src/__main__.py cost-apply [--strategy balanced]
     python src/__main__.py cost-baseline
