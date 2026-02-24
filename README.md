@@ -6,7 +6,7 @@
 
 **All three OpenClaw services monitored: base gateway (3000), enterprise bot (18789), web UI (5173). Crash at 3 AM → detected in 5 minutes.**
 
-A zero-dependency Python framework that makes AI agent operations reliable, affordable, and self-correcting. Built for [OpenClaw](https://docs.openclaw.ai). 343 tests. Zero external packages. Runs on your machine, on your schedule.
+A zero-dependency Python framework that makes AI agent operations reliable, affordable, and self-correcting. Built for [OpenClaw](https://docs.openclaw.ai). 377 tests. Zero external packages. Runs on your machine, on your schedule.
 
 ```bash
 pip install -e ".[dev]" && make install-watchdog && make cost-audit
@@ -313,7 +313,7 @@ src/
 
 ```bash
 source .venv/bin/activate
-make check   # ruff lint + mypy typecheck + pytest (343 tests, all passing)
+make check   # ruff lint + mypy typecheck + pytest (377 tests, all passing)
 ```
 
 See `CLAUDE.md` for design decisions, test conventions, and contributor workflow.

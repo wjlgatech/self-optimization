@@ -12,6 +12,9 @@ Usage:
     python src/__main__.py cost-baseline
     python src/__main__.py cost-status
     python src/__main__.py cost-govern
+    python src/__main__.py self-eval [--no-services]
+    python src/__main__.py self-heal
+    python src/__main__.py self-discover
 """
 
 import argparse
@@ -114,6 +117,29 @@ def main() -> None:
         "--port", type=int, default=0, help="Gateway port (default: from config)"
     )
     gw_parser.add_argument("--token", default="", help="Gateway auth token (default: from config)")
+
+    # self-eval
+    self_eval_parser = subparsers.add_parser(
+        "self-eval", help="Run full self-evaluation (lint + types + tests + services)"
+    )
+    self_eval_parser.add_argument(
+        "--no-services",
+        action="store_true",
+        help="Skip service health checks (for CI environments)",
+    )
+    self_eval_parser.add_argument(
+        "--markdown", action="store_true", help="Output markdown report instead of JSON"
+    )
+
+    # self-heal
+    subparsers.add_parser(
+        "self-heal", help="Auto-fix lint/format issues and repair corrupted state"
+    )
+
+    # self-discover
+    subparsers.add_parser(
+        "self-discover", help="Discover services, repos, and config drift"
+    )
 
     args = parser.parse_args()
 
@@ -233,6 +259,46 @@ def main() -> None:
         print(json.dumps(result, indent=2, default=str))
         if result.get("status") == "needs_attention":
             sys.exit(1)
+
+    elif args.command == "self-eval":
+        from self_eval import SelfEvalEngine  # noqa: E402
+
+        engine = SelfEvalEngine(state_dir=args.state_dir or "")
+        report = engine.run_full_eval(include_services=not args.no_services)
+        if args.markdown:
+            print(engine.generate_markdown_report(report))
+        else:
+            print(json.dumps(report, indent=2, default=str))
+        if report.get("grade") in ("D", "F"):
+            sys.exit(1)
+
+    elif args.command == "self-heal":
+        from self_eval import SelfEvalEngine  # noqa: E402
+
+        engine = SelfEvalEngine(state_dir=args.state_dir or "")
+        print("Healing lint issues...")
+        lint_result = engine.heal_lint()
+        print(json.dumps(lint_result, indent=2, default=str))
+        print("\nHealing formatting...")
+        fmt_result = engine.heal_format()
+        print(json.dumps(fmt_result, indent=2, default=str))
+        print("\nRepairing corrupted state files...")
+        state_result = engine.heal_state()
+        print(json.dumps(state_result, indent=2, default=str))
+
+    elif args.command == "self-discover":
+        from self_eval import SelfEvalEngine  # noqa: E402
+
+        engine = SelfEvalEngine(
+            state_dir=args.state_dir or "",
+            workspace_dir=args.workspace_dir or "",
+        )
+        discovery: dict[str, object] = {
+            "services": engine.discover_services(),
+            "repos": engine.discover_repos(),
+            "config_drift": engine.discover_config_drift(),
+        }
+        print(json.dumps(discovery, indent=2, default=str))
 
 
 if __name__ == "__main__":
