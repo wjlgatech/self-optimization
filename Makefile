@@ -1,6 +1,7 @@
 .PHONY: install lint format fmt typecheck test check clean \
        install-watchdog uninstall-watchdog watchdog-status \
        cost-audit cost-status cost-govern \
+       marketing-eval marketing-discover marketing-status \
        pre-commit
 
 # ── Setup ────────────────────────────────────────────────────────────────
@@ -59,3 +60,14 @@ cost-status:
 
 cost-govern:
 	.venv/bin/python src/__main__.py cost-govern
+
+# ── Marketing eval ──────────────────────────────────────────────────────
+
+marketing-eval:
+	.venv/bin/python src/__main__.py marketing-eval --markdown
+
+marketing-discover:
+	.venv/bin/python src/__main__.py marketing-discover
+
+marketing-status:
+	.venv/bin/python src/__main__.py marketing-status

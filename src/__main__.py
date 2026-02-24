@@ -15,6 +15,13 @@ Usage:
     python src/__main__.py self-eval [--no-services]
     python src/__main__.py self-heal
     python src/__main__.py self-discover
+    python src/__main__.py marketing-eval [--markdown]
+    python src/__main__.py marketing-discover
+    python src/__main__.py marketing-score
+    python src/__main__.py marketing-status
+    python src/__main__.py marketing-metrics --content-id ID --impressions N ...
+    python src/__main__.py marketing-publish --content-id ID --url URL [--date DATE]
+    python src/__main__.py marketing-recommend
 """
 
 import argparse
@@ -139,6 +146,54 @@ def main() -> None:
     # self-discover
     subparsers.add_parser(
         "self-discover", help="Discover services, repos, and config drift"
+    )
+
+    # ── Marketing eval commands ──────────────────────────────────────
+
+    # marketing-eval
+    mkt_eval_parser = subparsers.add_parser(
+        "marketing-eval", help="Full marketing content evaluation"
+    )
+    mkt_eval_parser.add_argument(
+        "--markdown", action="store_true", help="Output markdown report instead of JSON"
+    )
+
+    # marketing-discover
+    subparsers.add_parser(
+        "marketing-discover", help="Scan marketing/ for content items"
+    )
+
+    # marketing-score
+    subparsers.add_parser(
+        "marketing-score", help="Score all marketing content"
+    )
+
+    # marketing-status
+    subparsers.add_parser(
+        "marketing-status", help="Show content inventory (published vs draft)"
+    )
+
+    # marketing-metrics
+    mkt_metrics_parser = subparsers.add_parser(
+        "marketing-metrics", help="Update metrics for a content item"
+    )
+    mkt_metrics_parser.add_argument("--content-id", required=True, help="Content ID to update")
+    mkt_metrics_parser.add_argument("--impressions", type=int, default=None)
+    mkt_metrics_parser.add_argument("--engagements", type=int, default=None)
+    mkt_metrics_parser.add_argument("--clicks", type=int, default=None)
+    mkt_metrics_parser.add_argument("--conversions", type=int, default=None)
+
+    # marketing-publish
+    mkt_publish_parser = subparsers.add_parser(
+        "marketing-publish", help="Mark content as published"
+    )
+    mkt_publish_parser.add_argument("--content-id", required=True, help="Content ID to publish")
+    mkt_publish_parser.add_argument("--url", required=True, help="Published URL")
+    mkt_publish_parser.add_argument("--date", default="", help="Publish date (ISO format)")
+
+    # marketing-recommend
+    subparsers.add_parser(
+        "marketing-recommend", help="Generate improvement recommendations"
     )
 
     args = parser.parse_args()
@@ -299,6 +354,94 @@ def main() -> None:
             "config_drift": engine.discover_config_drift(),
         }
         print(json.dumps(discovery, indent=2, default=str))
+
+    # ── Marketing eval commands ──────────────────────────────────────
+
+    elif args.command == "marketing-eval":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        report = mkt.run_full_eval()
+        if args.markdown:
+            print(mkt.generate_markdown_report(report))
+        else:
+            print(json.dumps(report, indent=2, default=str))
+        if report.get("grade") in ("D", "F"):
+            sys.exit(1)
+
+    elif args.command == "marketing-discover":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        result = mkt.discover_content()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "marketing-score":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        mkt.discover_content()
+        result = mkt.score_all()
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.command == "marketing-status":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        result = mkt.discover_content()
+        status = {
+            "total": result["total"],
+            "published": result["published"],
+            "draft": result["draft"],
+            "content": [
+                {
+                    "id": c["content_id"],
+                    "title": c["title"],
+                    "status": c["status"],
+                    "channel": c["channel"],
+                    "type": c["content_type"],
+                }
+                for c in result["content"]
+            ],
+        }
+        print(json.dumps(status, indent=2, default=str))
+
+    elif args.command == "marketing-metrics":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        mkt.discover_content()
+        metrics: dict[str, int] = {}
+        if args.impressions is not None:
+            metrics["impressions"] = args.impressions
+        if args.engagements is not None:
+            metrics["engagements"] = args.engagements
+        if args.clicks is not None:
+            metrics["clicks"] = args.clicks
+        if args.conversions is not None:
+            metrics["conversions"] = args.conversions
+        result = mkt.update_metrics(args.content_id, metrics)
+        print(json.dumps(result, indent=2, default=str))
+        if not result.get("success"):
+            sys.exit(1)
+
+    elif args.command == "marketing-publish":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        mkt.discover_content()
+        result = mkt.set_published(args.content_id, args.url, args.date)
+        print(json.dumps(result, indent=2, default=str))
+        if not result.get("success"):
+            sys.exit(1)
+
+    elif args.command == "marketing-recommend":
+        from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+        mkt = MarketingEvalEngine(state_dir=args.state_dir or "")
+        mkt.discover_content()
+        recs = mkt.generate_recommendations()
+        print(json.dumps(recs, indent=2, default=str))
 
 
 if __name__ == "__main__":

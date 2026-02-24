@@ -284,7 +284,29 @@ class SelfOptimizationOrchestrator:
         reflection_path = self._write_reflection(today, review, activities)
         review["reflection_path"] = reflection_path
 
-        # 10. Persist state
+        # 10. Marketing eval (optional — only if marketing/ exists)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        marketing_dir = os.path.join(project_root, "marketing")
+        if os.path.isdir(marketing_dir):
+            try:
+                from marketing_eval import MarketingEvalEngine  # noqa: E402
+
+                mkt = MarketingEvalEngine(
+                    project_root=project_root,
+                    state_dir=self.state.state_dir,
+                )
+                mkt_report = mkt.run_full_eval()
+                review["marketing"] = {
+                    "grade": mkt_report.get("grade", "?"),
+                    "score": mkt_report.get("composite_score", 0),
+                    "total_content": mkt_report.get("discovery", {}).get("total", 0),
+                    "recommendations": len(mkt_report.get("recommendations", [])),
+                }
+            except Exception as e:
+                logger.warning("Marketing eval failed: %s", e)
+                review["marketing"] = {"error": str(e)}
+
+        # 11. Persist state
         self._persist_state()
         self.state.save("last_run", {"type": "daily_review", "timestamp": now})
 
